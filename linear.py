@@ -37,6 +37,7 @@ class Linear(tf.Module):
 
 def grad_update(step_size, variables, grads):
     for var, grad in zip(variables, grads):
+        print(var)
         var.assign_sub(step_size * grad)
 
 

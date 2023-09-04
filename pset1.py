@@ -72,8 +72,13 @@ class BasisExpansion(tf.Module):
 
     def __call__(self, x):
         # g = tf.math.exp(-(x - self.m)^2 / self.s^2)
-        g = x - self.m
-        z = self.w @ g
+        z = tf.math.exp (
+            tf.math.divide(
+                tf.math.negative(
+                    tf.math.square(
+                        tf.subtract(x, self.m))),
+                    tf.math.square(self.s)))
+        z = tf.multiply(self.w, z)
 
         if self.bias:
             z += self.b
@@ -82,6 +87,7 @@ class BasisExpansion(tf.Module):
 
 def grad_update(step_size, variables, grads):
     for var, grad in zip(variables, grads):
+        # print(var, grad)
         var.assign_sub(step_size * grad)
 
 
@@ -144,7 +150,7 @@ if __name__ == "__main__":
 
             # y_hat = linear(x_batch)
             y_hat = basexp(x_batch)
-            loss = tf.math.reduce_mean(0.5*(y_batch - y_hat) ** 2) ##
+            loss = tf.math.reduce_mean(0.5* (y_batch - y_hat) ** 2) ##
 
         grads = tape.gradient(loss, basexp.trainable_variables) 
         grad_update(step_size, basexp.trainable_variables, grads)
@@ -159,12 +165,13 @@ if __name__ == "__main__":
 
     fig, ax = plt.subplots()
 
-    # ax.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
+    ax.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
 
     a = tf.linspace(tf.reduce_min(x), tf.reduce_max(x), 100)[:, tf.newaxis]
     ax.plot(a.numpy().squeeze(), basexp(a).numpy().squeeze(), "-")
 
-    plt.plot(x, y, '.')
+
+    # plt.plot(x, y, '.')
 
     ax.set_xlabel("x")
     ax.set_ylabel("y")
