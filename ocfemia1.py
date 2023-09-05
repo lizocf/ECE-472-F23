@@ -5,13 +5,13 @@ import numpy as np
 
 
 class Linear(tf.Module):
-    def __init__(self, num_inputs, num_outputs, bias=True):
+    def __init__(self, num_inputs, num_outputs, M, bias=True):
         rng = tf.random.get_global_generator()
 
         stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))
 
         self.w = tf.Variable( 
-            rng.normal(shape=[10, num_outputs], stddev=stddev),
+            rng.normal(shape=[M, num_outputs], stddev=stddev),
             trainable=True,
             name="Linear/w",
         )
@@ -48,18 +48,12 @@ class BasisExpansion(tf.Module):
         )
 
         self.s = tf.Variable( 
-            0.6*tf.ones(M),
+            0.1*tf.ones(M),
             trainable=True,
             name="BasisExpansion/s",
         )
 
     def __call__(self, x):
-        # z = tf.math.exp (
-        #     tf.math.divide(
-        #         tf.math.negative(
-        #             tf.math.square(
-        #                 tf.subtract(x, self.m))),
-        #             tf.math.square(self.s)))
         z = tf.math.exp( -tf.math.square(x - self.m) / tf.math.square(self.s))
         return z
 
@@ -95,7 +89,7 @@ if __name__ == "__main__":
     num_samples = config["data"]["num_samples"]
     num_inputs = 1
     num_outputs = 1
-    M = 10
+    M = 6
 
     x = rng.uniform(shape=(num_samples, num_inputs))
     w = rng.normal(shape=(num_inputs, num_outputs))
@@ -106,7 +100,7 @@ if __name__ == "__main__":
         stddev=config["data"]["noise_stddev"])
     y = tf.math.sin(2*np.pi*x) + er
 
-    linear = Linear(num_inputs, num_outputs)
+    linear = Linear(num_inputs, num_outputs, M)
     basexp = BasisExpansion(M)
 
     num_iters = config["learning"]["num_iters"]
@@ -142,21 +136,31 @@ if __name__ == "__main__":
             )
             bar.refresh()
 
-    fig, ax = plt.subplots()
+    fig1, ax1 = plt.subplots()
 
-    ax.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
+    ax1.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
     a = tf.linspace(tf.reduce_min(x), tf.reduce_max(x), 100)[:, tf.newaxis]
-    ax.plot(a.numpy().squeeze(), np.sin(2*np.pi*a), "-")
-    ax.plot(a.numpy().squeeze(), linear(basexp(a)).numpy().squeeze(), ".")
+    ax1.plot(a.numpy().squeeze(), np.sin(2*np.pi*a), "-")
+    ax1.plot(a.numpy().squeeze(), linear(basexp(a)).numpy().squeeze(), ".")
 
 
-    # plt.plot(x, y, '.')
-
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_title("Linear fit using SGD")
+    ax1.set_xlabel("x")
+    ax1.set_ylabel("y")
+    ax1.set_title("Linear Fit of a Noisy Sinewave using Gaussian Basis Functions")
     
-    h = ax.set_ylabel("y", labelpad=10)
+    h = ax1.set_ylabel("y", labelpad=10)
     h.set_rotation(0)
 
-    fig.savefig("sine.pdf")
+    fig2, ax2 = plt.subplots()
+
+    ax2.plot(a.numpy().squeeze(), basexp(a).numpy().squeeze(), "-")
+
+    ax2.set_xlabel("x")
+    ax2.set_ylabel("y")
+    ax2.set_title("Gaussian Bases")
+    
+    h = ax2.set_ylabel("y", labelpad=10)
+    h.set_rotation(0)
+
+    fig1.savefig("sine.pdf")
+    fig2.savefig("bases.pdf")
