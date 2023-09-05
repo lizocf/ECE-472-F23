@@ -10,12 +10,12 @@
 #   refresh_rate: 10
 
 learning:
-  step_size: 0.3
-  batch_size: 200
-  num_iters: 200
+  step_size: 0.1
+  batch_size: 130
+  num_iters: 500
   decay_rate: 0.999
 data:
-  num_samples: 500
+  num_samples: 50
   noise_stddev: 0.1
 display:
   refresh_rate: 10

@@ -78,16 +78,16 @@ class BasisExpansion(tf.Module):
                     tf.math.square(
                         tf.subtract(x, self.m))),
                     tf.math.square(self.s)))
-        z = tf.multiply(self.w, z)
+        z = tf.math.multiply(self.w, z)
 
         if self.bias:
             z += self.b
+        # print(z)
 
         return z
 
 def grad_update(step_size, variables, grads):
     for var, grad in zip(variables, grads):
-        # print(var, grad)
         var.assign_sub(step_size * grad)
 
 

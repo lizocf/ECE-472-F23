@@ -1,16 +1,17 @@
 #!/bin/env python
 
 import tensorflow as tf
+import numpy as np
 
 
 class Linear(tf.Module):
     def __init__(self, num_inputs, num_outputs, bias=True):
         rng = tf.random.get_global_generator()
 
-        stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))  ##
+        stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))
 
-        self.w = tf.Variable(
-            rng.normal(shape=[num_inputs, num_outputs], stddev=stddev),
+        self.w = tf.Variable( 
+            rng.normal(shape=[10, num_outputs], stddev=stddev),
             trainable=True,
             name="Linear/w",
         )
@@ -28,12 +29,39 @@ class Linear(tf.Module):
 
     def __call__(self, x):
         z = x @ self.w
+        # z = tf.multiply(x, self.w)
 
         if self.bias:
             z += self.b
 
         return z
 
+class BasisExpansion(tf.Module):
+    def __init__(self, M):
+
+        self.M = M
+
+        self.m = tf.Variable( 
+            tf.linspace(0., 1., M),
+            trainable=True,
+            name="BasisExpansion/m",
+        )
+
+        self.s = tf.Variable( 
+            0.6*tf.ones(M),
+            trainable=True,
+            name="BasisExpansion/s",
+        )
+
+    def __call__(self, x):
+        # z = tf.math.exp (
+        #     tf.math.divide(
+        #         tf.math.negative(
+        #             tf.math.square(
+        #                 tf.subtract(x, self.m))),
+        #             tf.math.square(self.s)))
+        z = tf.math.exp( -tf.math.square(x - self.m) / tf.math.square(self.s))
+        return z
 
 def grad_update(step_size, variables, grads):
     for var, grad in zip(variables, grads):
@@ -49,6 +77,7 @@ if __name__ == "__main__":
     import yaml
 
     from tqdm import trange
+    import numpy as np
 
     parser = argparse.ArgumentParser(
         prog="Linear",
@@ -66,17 +95,19 @@ if __name__ == "__main__":
     num_samples = config["data"]["num_samples"]
     num_inputs = 1
     num_outputs = 1
+    M = 10
 
     x = rng.uniform(shape=(num_samples, num_inputs))
     w = rng.normal(shape=(num_inputs, num_outputs))
     b = rng.normal(shape=(1, num_outputs))
-    y = rng.normal(
+    er = rng.normal(
         shape=(num_samples, num_outputs),
-        mean=x @ w + b,
-        stddev=config["data"]["noise_stddev"],
-    )
+        mean=0,
+        stddev=config["data"]["noise_stddev"])
+    y = tf.math.sin(2*np.pi*x) + er
 
     linear = Linear(num_inputs, num_outputs)
+    basexp = BasisExpansion(M)
 
     num_iters = config["learning"]["num_iters"]
     step_size = config["learning"]["step_size"]
@@ -95,11 +126,13 @@ if __name__ == "__main__":
             x_batch = tf.gather(x, batch_indices)
             y_batch = tf.gather(y, batch_indices)
 
-            y_hat = linear(x_batch)
-            loss = tf.math.reduce_mean((y_batch - y_hat) ** 2) ##
+            phi = basexp(x_batch)
+            y_hat = linear(phi)
 
-        grads = tape.gradient(loss, linear.trainable_variables) 
-        grad_update(step_size, linear.trainable_variables, grads)
+            loss = tf.math.reduce_mean(0.5* (y_batch - y_hat) ** 2) ##
+
+        grads = tape.gradient(loss, linear.trainable_variables + basexp.trainable_variables) 
+        grad_update(step_size, linear.trainable_variables + basexp.trainable_variables, grads)
 
         step_size *= decay_rate 
 
@@ -112,9 +145,12 @@ if __name__ == "__main__":
     fig, ax = plt.subplots()
 
     ax.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
-
     a = tf.linspace(tf.reduce_min(x), tf.reduce_max(x), 100)[:, tf.newaxis]
-    ax.plot(a.numpy().squeeze(), linear(a).numpy().squeeze(), "-")
+    ax.plot(a.numpy().squeeze(), np.sin(2*np.pi*a), "-")
+    ax.plot(a.numpy().squeeze(), linear(basexp(a)).numpy().squeeze(), ".")
+
+
+    # plt.plot(x, y, '.')
 
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -123,4 +159,4 @@ if __name__ == "__main__":
     h = ax.set_ylabel("y", labelpad=10)
     h.set_rotation(0)
 
-    fig.savefig("plot.pdf")
+    fig.savefig("sine.pdf")
