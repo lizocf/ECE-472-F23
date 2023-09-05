@@ -14,7 +14,7 @@ class Linear(tf.Module):
             rng.normal(shape=[M, num_outputs], stddev=stddev),
             trainable=True,
             name="Linear/w",
-        )
+        ) # change shape to [M, out] to dot product with X (with shape [in, M])
 
         self.bias = bias
 
@@ -29,7 +29,6 @@ class Linear(tf.Module):
 
     def __call__(self, x):
         z = x @ self.w
-        # z = tf.multiply(x, self.w)
 
         if self.bias:
             z += self.b
@@ -42,19 +41,19 @@ class BasisExpansion(tf.Module):
         self.M = M
 
         self.m = tf.Variable( 
-            tf.linspace(0., 1., M),
+            tf.linspace(0., 1., M), # could have made it in rng distributions?
             trainable=True,
             name="BasisExpansion/m",
         )
 
         self.s = tf.Variable( 
-            0.1*tf.ones(M),
+            0.2*tf.ones(M),
             trainable=True,
             name="BasisExpansion/s",
-        )
+        ) ##0.2 led to the best prediction
 
     def __call__(self, x):
-        z = tf.math.exp( -tf.math.square(x - self.m) / tf.math.square(self.s))
+        z = tf.exp( -tf.square(x - self.m) / tf.square(self.s))
         return z
 
 def grad_update(step_size, variables, grads):
@@ -98,9 +97,9 @@ if __name__ == "__main__":
         shape=(num_samples, num_outputs),
         mean=0,
         stddev=config["data"]["noise_stddev"])
-    y = tf.math.sin(2*np.pi*x) + er
+    y = tf.math.sin(2*np.pi*x) + er # random sine samples
 
-    linear = Linear(num_inputs, num_outputs, M)
+    linear = Linear(num_inputs, num_outputs, M) ## add M input for w shape
     basexp = BasisExpansion(M)
 
     num_iters = config["learning"]["num_iters"]
@@ -121,11 +120,11 @@ if __name__ == "__main__":
             y_batch = tf.gather(y, batch_indices)
 
             phi = basexp(x_batch)
-            y_hat = linear(phi)
+            y_hat = linear(phi) # integrate base expansion with linear module
 
-            loss = tf.math.reduce_mean(0.5* (y_batch - y_hat) ** 2) ##
+            loss = tf.math.reduce_mean(0.5* (y_batch - y_hat) ** 2) # multiply original by 0.5
 
-        grads = tape.gradient(loss, linear.trainable_variables + basexp.trainable_variables) 
+        grads = tape.gradient(loss, linear.trainable_variables + basexp.trainable_variables) # add all trainable vars for SGD
         grad_update(step_size, linear.trainable_variables + basexp.trainable_variables, grads)
 
         step_size *= decay_rate 
@@ -136,6 +135,7 @@ if __name__ == "__main__":
             )
             bar.refresh()
 
+
     fig1, ax1 = plt.subplots()
 
     ax1.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
@@ -143,13 +143,16 @@ if __name__ == "__main__":
     ax1.plot(a.numpy().squeeze(), np.sin(2*np.pi*a), "-")
     ax1.plot(a.numpy().squeeze(), linear(basexp(a)).numpy().squeeze(), ".")
 
-
     ax1.set_xlabel("x")
     ax1.set_ylabel("y")
     ax1.set_title("Linear Fit of a Noisy Sinewave using Gaussian Basis Functions")
     
     h = ax1.set_ylabel("y", labelpad=10)
     h.set_rotation(0)
+
+    fig1.savefig("sine.pdf")
+
+    # Gauss Plots 
 
     fig2, ax2 = plt.subplots()
 
@@ -162,5 +165,5 @@ if __name__ == "__main__":
     h = ax2.set_ylabel("y", labelpad=10)
     h.set_rotation(0)
 
-    fig1.savefig("sine.pdf")
     fig2.savefig("bases.pdf")
+    

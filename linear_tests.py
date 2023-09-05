@@ -6,7 +6,7 @@ import pytest
 def test_additivity():
     import tensorflow as tf
 
-    from linear import Linear
+    from ocfemia1 import Linear
 
     rng = tf.random.get_global_generator()
     rng.reset_from_seed(2384230948)
