@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 import numpy as np
+from sklearn.inspection import DecisionBoundaryDisplay
 
 class Linear(tf.Module):
     def __init__(self, num_inputs, num_outputs, bias=True):
@@ -37,19 +38,47 @@ class Linear(tf.Module):
 class MLP(tf.Module):
     def __init__(self, num_inputs, num_outputs, num_hidden_layers, hidden_layer_width, 
                  hidden_activation=tf.identity, output_activation=tf.identity):
+        
         rng = tf.random.get_global_generator()
         stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))
 
-        self.w = tf.Variable(
-            rng.normal(shape=[2, num_outputs], stddev=stddev),
+        self.w_in = tf.Variable(
+            rng.normal(shape=[2, hidden_layer_width], stddev=stddev),
             trainable=True,
-            name="Linear/w",)
+            name="Linear/w",
+        )
+        self.w_h = tf.Variable(
+            rng.normal(shape=[hidden_layer_width, hidden_layer_width], stddev=stddev),
+            trainable=True,
+            name="Linear/w",
+        )
+
+        self.w_out = tf.Variable(
+            rng.normal(shape=[hidden_layer_width, 2], stddev=stddev),
+            trainable=True,
+            name="Linear/w",
+        )
+
+        self.num_hidden_layers = num_hidden_layers
         
     def __call__(self,x):
-        for i in range(num_hidden_layers):
-            pred = relu(x @ self.w)
-            print(pred)
-        return pred
+        
+        # input layer [bs, n]
+        z = x @ self.w_in
+
+        # hidden layer(s) [n, m] -> [m, m]
+        for i in range(self.num_hidden_layers):
+            z = relu(z @ self.w_h)
+            # print(z)
+        
+        # output layer [m, out]
+        # pred = sigmoid(pred @ self.w_out)
+        z = z @ self.w_out
+        return z
+
+def grad_update(step_size, variables, grads):
+    for var, grad in zip(variables, grads):
+        var.assign_sub(step_size * grad)
 
 if __name__ == "__main__":
     import argparse
@@ -89,11 +118,18 @@ if __name__ == "__main__":
     theta = np.sqrt(np.random.rand(N))*3*np.pi
 
     r = 2*theta + np.pi
-    spiral_a = np.array([np.cos(theta)*r, np.sin(theta)*r]).T
-    spiral_b = np.array([np.cos(theta)*-r, np.sin(theta)*-r]).T
-    x_a = spiral_a + np.random.randn(N,1)
-    x_b = spiral_b + np.random.randn(N,1)
+    spiral_a = np.array([tf.math.cos(theta)*r, tf.math.sin(theta)*r]).T
+    spiral_b = np.array([tf.math.cos(theta)*-r, tf.math.sin(theta)*-r]).T
+    x_a = spiral_a + np.random.rand(N,1)
+    x_b = spiral_b + np.random.rand(N,1)
+    x = tf.Variable(np.append(x_a, x_b, axis=0))
+    x = tf.cast(x, dtype=tf.float32)
+
+    y = tf.Variable(np.append(tf.zeros(x_a.shape[0]), tf.ones(x_b.shape[0]), axis=0))
+    y = tf.cast(x, dtype=tf.float32)
     ####################
+
+    # print(x[:,1])
 
     num_iters = config["learning"]["num_iters"]
     step_size = config["learning"]["step_size"]
@@ -106,11 +142,14 @@ if __name__ == "__main__":
     refresh_rate = config["display"]["refresh_rate"]
 
     def relu(x):
-        return max(0,x)
+        # return max(0,x)
+        return tf.math.maximum(0,x)
+
+    def sigmoid(x):
+        return 1 / (1 + tf.math.exp(-x))
     
     # linear = Linear(num_inputs, num_outputs)
-    mlp = MLP(num_inputs, num_outputs, num_hidden_layers, hidden_layer_width, relu, relu)
-
+    mlp = MLP(num_inputs, num_outputs, num_hidden_layers, hidden_layer_width)
     bar = trange(num_iters)
 
     for i in bar:
@@ -118,32 +157,31 @@ if __name__ == "__main__":
             shape=[batch_size], maxval=num_samples, dtype=tf.int32
         )
         with tf.GradientTape() as tape:
-            xa_batch = tf.gather(x_a, batch_indices)
-            xb_batch = tf.gather(x_b, batch_indices)
+            x_batch = tf.gather(x, batch_indices)
+            y_batch = tf.gather(y, batch_indices)
 
-            Wx_a = mlp(x_a)
-            # Wx_b = mlp(x_b)
-            
-            
-        
+            y_hat = mlp(x_batch)
+            print(y_batch)
 
-            # loss = tf.math.reduce_mean(0.5* (y_batch - y_hat) ** 2) # multiply original by 0.5
-
-        # grads = tape.gradient(loss, linear.trainable_variables + basexp.trainable_variables) # add all trainable vars for SGD
-        # grad_update(step_size, linear.trainable_variables + basexp.trainable_variables, grads)
+            loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-9))-(1-y_batch)*tf.math.log(1-y_hat+(1e-9)))
+            # print(loss)            
+            # loss = -(y_batch)*tf.math.log(y_hat) - (1-y_batch)*tf.math.log(y_hat)
+        grads = tape.gradient(loss, mlp.trainable_variables) # add all trainable vars for SGD
+        grad_update(step_size, mlp.trainable_variables, grads)
 
         step_size *= decay_rate 
 
-        # if i % refresh_rate == (refresh_rate - 1):
-        #     bar.set_description(
-        #         f"Step {i}; Loss => {loss.numpy():0.4f}, step_size => {step_size:0.4f}"
-        #     )
-        #     bar.refresh()
+        if i % refresh_rate == (refresh_rate - 1):
+            bar.set_description(
+                f"Step {i}; Loss => {loss}, step_size => {step_size}"
+            )
+            bar.refresh()
 
-    # loss = -y*log(q)-(1-y)*log(1-q)
 
 
     fig1, ax1 = plt.subplots()
+
+    # print(x_a.shape[0])
 
     ax1.plot(x_a[:,0], x_a[:,1], "x")
     ax1.plot(x_b[:,0], x_b[:,1], "x")
@@ -154,6 +192,8 @@ if __name__ == "__main__":
     
     h = ax1.set_ylabel("y", labelpad=10)
     h.set_rotation(0)
+
+    display = DecisionBoundaryDisplay.from_estimator()
 
     fig1.savefig("spiral.pdf")
 
