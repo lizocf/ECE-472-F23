@@ -13,8 +13,9 @@ def test_additivity():
 
     num_inputs = 10
     num_outputs = 1
+    M = 10
 
-    linear = Linear(num_inputs, num_outputs)
+    linear = Linear(num_inputs, num_outputs, M)
 
     a = rng.normal(shape=[1, num_inputs])
     b = rng.normal(shape=[1, num_inputs])
