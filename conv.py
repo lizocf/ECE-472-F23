@@ -40,26 +40,55 @@ class Conv2d(tf.Module):
         self.strides = strides
 
     def __call__(self, x):
+        # breakpoint()
         f = tf.nn.conv2d(x, self.filt, self.strides, padding = 'VALID')
         return f
 
 class Classifier(tf.Module):
-    def __init__(self, input_depth: int, layer_depths: list[int],
+    def __init__(self, num_inputs, num_outputs, input_depth: int, layer_depths: list[int],
                  layer_kernel_sizes: list[tuple[int, int]], num_classes: int):
+
+        rng = tf.random.get_global_generator()
+
+        stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))  ##
         
         self.input_depth = input_depth
         self.layer_depths = layer_depths
         self.layer_kernel_sizes = layer_kernel_sizes
         self.num_classes = num_classes
 
-        self.filter = tf.Variable([self.layer_kernel_sizes, 1, self.input_depth])
+        # self.filter1 = tf.Variable([[[3.]], [[3.]], [[self.input_depth]], layer_deptgh[0]], dtype=tf.float32)
+        
+        # self.filter = tf.Variable(tf.random_normal([3,3,5,1]))
 
-        self.conv2d = Conv2d(self.filter, [1,1,1,1])
+        # breakpoint()
+
+        self.infilter = tf.Variable(
+            rng.normal(shape=(layer_kernel_sizes, layer_kernel_sizes, input_depth, layer_depths)),
+            trainable=True,
+            name="conv/f"
+        )
+
+        self.hidfilter = tf.Variable(
+            rng.normal(shape=(layer_kernel_sizes, layer_kernel_sizes, layer_depths, layer_depths)),
+            trainable=True,
+            name="conv/f"
+        )
+
+
+        self.inconv2d = Conv2d(self.infilter, [1,1,1,1])
+
+
+        self.hidconv2d = Conv2d(self.hidfilter, [1,1,1,1])
 
     def __call__(self, x):
-        for i in range(self.input_depth):
-            x = self.conv2d(x)
+        x = self.inconv2d(x)
         print(x.shape)
+
+        for i in range(5):
+            x = self.hidconv2d(x)
+            print(x.shape)
+            
         return x
 
 
@@ -102,13 +131,17 @@ if __name__ == "__main__":
 
     trainingImages, trainingLabels = loadMNIST( "train")
     # testImages, testLabels = loadMNIST( "t10k")
+    
+    num_inputs = 1
+    num_outputs = 1
 
-    trainingImages = trainingImages / 255.0 # normalize grayscale to 0-1
+    trainingImages = tf.expand_dims(trainingImages / 255.0, -1) # normalize grayscale to 0-1
+    trainingImages = tf.cast(trainingImages, dtype=tf.float32)
     print(trainingImages.shape)
 
     
-    classifier = Classifier(64, list[32, 16, 10], 3, 10)
-    y_hat = classifier([trainingImages, 1])
+    classifier = Classifier(num_inputs, num_outputs, 1, 32, 3, 10)
+    y_hat = classifier(trainingImages)
 
     ## DISPLAY TRAINING IMAGES ##
     # first_image = np.array(trainingImages[0], dtype='float')
