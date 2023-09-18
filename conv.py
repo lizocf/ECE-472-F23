@@ -35,13 +35,12 @@ class Linear(tf.Module):
         return z
 
 class Conv2d(tf.Module):
-    def __init__(self, func):
-        self.func = tf.nn.conv2d()
+    def __init__(self, filt, strides):
+        self.filt = filt
+        self.strides = strides
 
-    def pooling():
-        pass
-    def __call__(self, x, filt, strides):
-        f = self.func(x, filt, strides, padding = 'VALID')
+    def __call__(self, x):
+        f = tf.nn.conv2d(x, self.filt, self.strides, padding = 'VALID')
         return f
 
 class Classifier(tf.Module):
@@ -55,13 +54,13 @@ class Classifier(tf.Module):
 
         self.filter = tf.Variable([self.layer_kernel_sizes, 1, self.input_depth])
 
+        self.conv2d = Conv2d(self.filter, [1,1,1,1])
 
     def __call__(self, x):
-        for i in range(self.layer_depths):
-            x = Conv2d(x, self.filter, [1,1,1,1])
+        for i in range(self.input_depth):
+            x = self.conv2d(x)
         print(x.shape)
         return x
-
 
 
 def grad_update(step_size, variables, grads):
@@ -105,14 +104,18 @@ if __name__ == "__main__":
     # testImages, testLabels = loadMNIST( "t10k")
 
     trainingImages = trainingImages / 255.0 # normalize grayscale to 0-1
-    # print(trainingImages[0])
+    print(trainingImages.shape)
 
+    
+    classifier = Classifier(64, list[32, 16, 10], 3, 10)
+    y_hat = classifier([trainingImages, 1])
 
     ## DISPLAY TRAINING IMAGES ##
-    first_image = np.array(trainingImages[0], dtype='float')
-    pixels = first_image.reshape((28, 28))
-    plt.imshow(pixels, cmap=plt.cm.binary)
-    plt.show()
+    # first_image = np.array(trainingImages[0], dtype='float')
+    # pixels = first_image.reshape((28, 28))
+    # plt.imshow(pixels, cmap=plt.cm.binary)
+    # plt.show()
+    #############################
 
 
 #     rng = tf.random.get_global_generator()
