@@ -34,6 +34,50 @@ class Linear(tf.Module):
 
         return z
 
+class MLP(tf.Module):
+    def __init__(self, num_inputs, num_outputs, num_hidden_layers, hidden_layer_width, 
+                 hidden_activation=tf.identity, output_activation=tf.identity):
+        
+        rng = tf.random.get_global_generator()
+        stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))
+
+        self.num_hidden_layers = num_hidden_layers
+    
+        self.hidden_activation = hidden_activation
+
+        self.output_activation = output_activation
+
+        self.inputLayer = Linear(
+            num_inputs = 1,
+            num_outputs = hidden_layer_width
+        )
+        
+        self.hiddenLayer = [
+            Linear(num_inputs = hidden_layer_width,
+                    num_outputs = hidden_layer_width)
+            for i in range(num_hidden_layers)
+            ]
+
+        self.outputLayer = Linear(
+            num_inputs = hidden_layer_width,
+            num_outputs = 1
+        )
+
+    def __call__(self,x):
+        
+        z = self.inputLayer(x)
+        
+        print(x.shape)
+        for i in range(num_hidden_layers):
+            z = self.hidden_activation(self.hiddenLayer[i](z))
+        
+        print(x.shape)
+        z = self.output_activation(self.outputLayer(z))
+        # print(x.shape)
+
+        return z
+
+
 class Conv2d(tf.Module):
     def __init__(self, filt, strides):
         self.filt = filt
@@ -46,11 +90,19 @@ class Conv2d(tf.Module):
 
 class Classifier(tf.Module):
     def __init__(self, num_inputs, num_outputs, input_depth: int, layer_depths: list[int],
-                 layer_kernel_sizes: list[tuple[int, int]], num_classes: int):
+                 layer_kernel_sizes: list[tuple[int, int]], num_classes: int,
+                  num_hidden_layers, hidden_layer_width, 
+                  hidden_activation= tf.identity, output_activation=tf.identity):
 
         rng = tf.random.get_global_generator()
 
         stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))  ##
+
+        self.num_hidden_layers = num_hidden_layers
+        
+        self.hidden_activation = hidden_activation
+
+        self.output_activation = output_activation
         
         # self.input_depth = input_depth
         # self.layer_depths = layer_depths
@@ -76,17 +128,16 @@ class Classifier(tf.Module):
             name="conv/f"
         )
 
-
         self.inconv2d = Conv2d(self.infilter, [1,1,1,1])
 
 
         self.hidconv2d = Conv2d(self.hidfilter, [1,1,1,1])
 
-        self.fullLayer = Linear(
-            num_inputs = layer_depths,
-            num_outputs = 1
-        )
+        # self.flatten = Linear(layer_depths, num_outputs)
 
+        self.fullLayer = MLP(num_inputs, num_outputs, self.num_hidden_layers, 
+                             hidden_layer_width, self.hidden_activation, self.output_activation)
+                             
     def __call__(self, x):
         x = self.inconv2d(x)
         print(x.shape)
@@ -95,12 +146,14 @@ class Classifier(tf.Module):
             x = tf.nn.relu(self.hidconv2d(x))
             print(x.shape)
 
-        tf.reshape(x, [batch_size, 1])
+        x = self.flatten(x)
 
-        x = tf.nn.relu(self.fullLayer(x))
         print(x.shape)
-        
-        x = tf.nn.softmax(x)
+
+        breakpoint()
+
+        x = self.fullLayer(x)
+
         print(x.shape)
         breakpoint()
         return x
@@ -161,8 +214,20 @@ if __name__ == "__main__":
 
     print(trainingImages.shape)
 
+    num_samples = config["data"]["num_samples"]
+    num_iters = config["learning"]["num_iters"]
+    step_size = config["learning"]["step_size"]
+    decay_rate = config["learning"]["decay_rate"]
+    batch_size = config["learning"]["batch_size"]
+
+    refresh_rate = config["display"]["refresh_rate"]
+
+    num_hidden_layers = config["mlp"]["num_hidden_layers"]
+    hidden_layer_width = config["mlp"]["hidden_layer_width"]
+
     classifier = Classifier(num_inputs, num_outputs, input_layer, 
-                            layer_depths, layer_kernel_sizes, num_classes)
+                            layer_depths, layer_kernel_sizes, num_classes,
+                            num_hidden_layers, hidden_layer_width, tf.nn.relu, tf.nn.softmax)
 
     ## DISPLAY TRAINING IMAGES ##
     # first_image = np.array(trainingImages[0], dtype='float')
@@ -187,27 +252,21 @@ if __name__ == "__main__":
 
 #     linear = Linear(num_inputs, num_outputs)
 
-    num_samples = config["data"]["num_samples"]
-    num_iters = config["learning"]["num_iters"]
-    step_size = config["learning"]["step_size"]
-    decay_rate = config["learning"]["decay_rate"]
-    batch_size = config["learning"]["batch_size"]
-
-    refresh_rate = config["display"]["refresh_rate"]
-
     bar = trange(num_iters)
 
 
-    y_hat = classifier(trainingImages)
+
     for i in bar:
         batch_indices = rng.uniform(
             shape=[batch_size], maxval=num_samples, dtype=tf.int32
         )
         with tf.GradientTape() as tape:
             x_batch = tf.gather(trainingImages, batch_indices)
-            y_batch = tf.gather(trainingLabels, batch_indices)
+            y_batch = tf.reshape(tf.gather(trainingLabels, batch_indices), (batch_size, 1))
 
-            
+            # breakpoint()
+            y_hat = classifier(x_batch)
+
             loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
 
 
