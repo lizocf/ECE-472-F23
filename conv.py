@@ -35,7 +35,7 @@ class Linear(tf.Module):
         return z
 
 class MLP(tf.Module):
-    def __init__(self, num_inputs, num_outputs, num_hidden_layers, hidden_layer_width, 
+    def __init__(self, num_inputs, num_outputs, num_hidden_layers, layer_depths, hidden_layer_width, 
                  hidden_activation=tf.identity, output_activation=tf.identity):
         
         rng = tf.random.get_global_generator()
@@ -47,8 +47,12 @@ class MLP(tf.Module):
 
         self.output_activation = output_activation
 
+        self.layer_depths = layer_depths
+
+        # breakpoint()
+
         self.inputLayer = Linear(
-            num_inputs = 1600,
+            num_inputs = self.layer_depths * 100,
             num_outputs = hidden_layer_width
         )
         
@@ -70,6 +74,7 @@ class MLP(tf.Module):
         # print(x.shape)
         for i in range(num_hidden_layers):
             z = self.hidden_activation(self.hiddenLayer[i](z))
+            z = tf.nn.dropout(z, 0.5)
         
         # print(x.shape)
         z = self.output_activation(self.outputLayer(z))
@@ -135,7 +140,7 @@ class Classifier(tf.Module):
 
         # self.flatten = Linear(layer_depths, num_outputs)
 
-        self.fullLayer = MLP(num_inputs, num_outputs, self.num_hidden_layers, 
+        self.fullLayer = MLP(num_inputs, num_outputs, self.num_hidden_layers, layer_depths,
                              hidden_layer_width, self.hidden_activation, self.output_activation)
 
     def flatten(self, x):
@@ -156,14 +161,11 @@ class Classifier(tf.Module):
 
         x = self.flatten(x)
 
-        # print(x.shape)
-
-        # breakpoint()
-
         x = self.fullLayer(x)
 
+
         # print(x.shape)
-        # breakpoint()
+
         return x
 
 
@@ -226,9 +228,16 @@ if __name__ == "__main__":
 
     trainingImages = tf.expand_dims(trainImages[0:40000] / 255.0, -1)
     validImages = tf.expand_dims(trainImages[40001:60000] / 255.0, -1)
+
+    trainingLabels = trainingLabels[0:40000]
+    trainingLabels = oneHotEncode(trainingLabels)
+     
+    validLabels = trainingLabels[40001:60000]
+    validLabels = oneHotEncode(validLabels)
+    
+
     # testImages = tf.expand_dims(testImages / 255.0, -1)
 
-    trainingLabels = oneHotEncode(trainingLabels)
     # breakpoint()
 
 
@@ -283,7 +292,11 @@ if __name__ == "__main__":
 
             y_hat = classifier(x_batch)
 
-            loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
+            # breakpoint()
+
+            # loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
+
+            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y_hat, y_batch))
 
             # breakpoint()
 
@@ -299,7 +312,7 @@ if __name__ == "__main__":
 
         if i % refresh_rate == (refresh_rate - 1):
             bar.set_description(
-                f"Step {i}; Loss => {loss.numpy():0.4f}, Accuracy => {accuracy:0.4f}, step_size => {step_size:0.4f}"
+                f"Step {i}; Loss => {loss}, Accuracy => {accuracy:0.4f}, step_size => {step_size:0.4f}"
             )
 
             bar.refresh()
