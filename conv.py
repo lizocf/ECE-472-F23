@@ -52,10 +52,10 @@ class Classifier(tf.Module):
 
         stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))  ##
         
-        self.input_depth = input_depth
-        self.layer_depths = layer_depths
-        self.layer_kernel_sizes = layer_kernel_sizes
-        self.num_classes = num_classes
+        # self.input_depth = input_depth
+        # self.layer_depths = layer_depths
+        # self.layer_kernel_sizes = layer_kernel_sizes
+        # self.num_classes = num_classes
 
         # self.filter1 = tf.Variable([[[3.]], [[3.]], [[self.input_depth]], layer_deptgh[0]], dtype=tf.float32)
         
@@ -69,6 +69,7 @@ class Classifier(tf.Module):
             name="conv/f"
         )
 
+
         self.hidfilter = tf.Variable(
             rng.normal(shape=(layer_kernel_sizes, layer_kernel_sizes, layer_depths, layer_depths)),
             trainable=True,
@@ -81,14 +82,27 @@ class Classifier(tf.Module):
 
         self.hidconv2d = Conv2d(self.hidfilter, [1,1,1,1])
 
+        self.fullLayer = Linear(
+            num_inputs = layer_depths,
+            num_outputs = 1
+        )
+
     def __call__(self, x):
         x = self.inconv2d(x)
         print(x.shape)
 
-        for i in range(5):
-            x = self.hidconv2d(x)
+        for i in range(8): ## num conv layers
+            x = tf.nn.relu(self.hidconv2d(x))
             print(x.shape)
-            
+
+        tf.reshape(x, [batch_size, 1])
+
+        x = tf.nn.relu(self.fullLayer(x))
+        print(x.shape)
+        
+        x = tf.nn.softmax(x)
+        print(x.shape)
+        breakpoint()
         return x
 
 
@@ -131,17 +145,24 @@ if __name__ == "__main__":
 
     trainingImages, trainingLabels = loadMNIST( "train")
     # testImages, testLabels = loadMNIST( "t10k")
-    
+
+    trainImages = tf.expand_dims(trainingImages / 255.0, -1) # normalize grayscale to 0-1
+    trainImages = tf.cast(trainingImages, dtype=tf.float32)
+
+    trainingImages = tf.expand_dims(trainImages[0:40000] / 255.0, -1)
+    validImages = tf.expand_dims(trainImages[40001:60000] / 255.0, -1)
+
     num_inputs = 1
     num_outputs = 1
+    input_layer = 1
+    num_classes = 10
+    layer_depths = config["conv"]["layer_depths"]
+    layer_kernel_sizes = config["conv"]["layer_kernel_sizes"]
 
-    trainingImages = tf.expand_dims(trainingImages / 255.0, -1) # normalize grayscale to 0-1
-    trainingImages = tf.cast(trainingImages, dtype=tf.float32)
     print(trainingImages.shape)
 
-    
-    classifier = Classifier(num_inputs, num_outputs, 1, 32, 3, 10)
-    y_hat = classifier(trainingImages)
+    classifier = Classifier(num_inputs, num_outputs, input_layer, 
+                            layer_depths, layer_kernel_sizes, num_classes)
 
     ## DISPLAY TRAINING IMAGES ##
     # first_image = np.array(trainingImages[0], dtype='float')
@@ -151,12 +172,9 @@ if __name__ == "__main__":
     #############################
 
 
-#     rng = tf.random.get_global_generator()
-#     rng.reset_from_seed(0x43966E87BD57227011B5B03B58785EC1)
+    rng = tf.random.get_global_generator()
+    rng.reset_from_seed(0x43966E87BD57227011B5B03B58785EC1)
 
-#     num_samples = config["data"]["num_samples"]
-#     num_inputs = 1
-#     num_outputs = 1
 
 #     x = rng.uniform(shape=(num_samples, num_inputs))
 #     w = rng.normal(shape=(num_inputs, num_outputs))
@@ -169,36 +187,40 @@ if __name__ == "__main__":
 
 #     linear = Linear(num_inputs, num_outputs)
 
-#     num_iters = config["learning"]["num_iters"]
-#     step_size = config["learning"]["step_size"]
-#     decay_rate = config["learning"]["decay_rate"]
-#     batch_size = config["learning"]["batch_size"]
+    num_samples = config["data"]["num_samples"]
+    num_iters = config["learning"]["num_iters"]
+    step_size = config["learning"]["step_size"]
+    decay_rate = config["learning"]["decay_rate"]
+    batch_size = config["learning"]["batch_size"]
 
-#     refresh_rate = config["display"]["refresh_rate"]
+    refresh_rate = config["display"]["refresh_rate"]
 
-#     bar = trange(num_iters)
+    bar = trange(num_iters)
 
-#     for i in bar:
-#         batch_indices = rng.uniform(
-#             shape=[batch_size], maxval=num_samples, dtype=tf.int32
-#         )
-#         with tf.GradientTape() as tape:
-#             x_batch = tf.gather(x, batch_indices)
-#             y_batch = tf.gather(y, batch_indices)
 
-#             y_hat = linear(x_batch)
-#             loss = tf.math.reduce_mean((y_batch - y_hat) ** 2) ##
+    y_hat = classifier(trainingImages)
+    for i in bar:
+        batch_indices = rng.uniform(
+            shape=[batch_size], maxval=num_samples, dtype=tf.int32
+        )
+        with tf.GradientTape() as tape:
+            x_batch = tf.gather(trainingImages, batch_indices)
+            y_batch = tf.gather(trainingLabels, batch_indices)
 
-#         grads = tape.gradient(loss, linear.trainable_variables) 
-#         grad_update(step_size, linear.trainable_variables, grads)
+            
+            loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
 
-#         step_size *= decay_rate 
 
-#         if i % refresh_rate == (refresh_rate - 1):
-#             bar.set_description(
-#                 f"Step {i}; Loss => {loss.numpy():0.4f}, step_size => {step_size:0.4f}"
-#             )
-#             bar.refresh()
+        grads = tape.gradient(loss, conv.trainable_variables) 
+        grad_update(step_size, conv.trainable_variables, grads)
+
+        step_size *= decay_rate 
+
+        if i % refresh_rate == (refresh_rate - 1):
+            bar.set_description(
+                f"Step {i}; Loss => {loss.numpy():0.4f}, step_size => {step_size:0.4f}"
+            )
+            bar.refresh()
 
 #     fig, ax = plt.subplots()
 
