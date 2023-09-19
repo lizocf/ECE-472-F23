@@ -48,7 +48,7 @@ class MLP(tf.Module):
         self.output_activation = output_activation
 
         self.inputLayer = Linear(
-            num_inputs = 1,
+            num_inputs = 1600,
             num_outputs = hidden_layer_width
         )
         
@@ -60,18 +60,18 @@ class MLP(tf.Module):
 
         self.outputLayer = Linear(
             num_inputs = hidden_layer_width,
-            num_outputs = 1
+            num_outputs = 10
         )
 
     def __call__(self,x):
         
         z = self.inputLayer(x)
         
-        print(x.shape)
+        # print(x.shape)
         for i in range(num_hidden_layers):
             z = self.hidden_activation(self.hiddenLayer[i](z))
         
-        print(x.shape)
+        # print(x.shape)
         z = self.output_activation(self.outputLayer(z))
         # print(x.shape)
 
@@ -137,25 +137,33 @@ class Classifier(tf.Module):
 
         self.fullLayer = MLP(num_inputs, num_outputs, self.num_hidden_layers, 
                              hidden_layer_width, self.hidden_activation, self.output_activation)
+
+    def flatten(self, x):
+        num_features = x.shape[1] * x.shape[2] * x.shape[3]
+        output = tf.reshape(x, [-1, num_features])
+        # breakpoint()
+        return output
+
+        self.flatten = flatten()
                              
     def __call__(self, x):
         x = self.inconv2d(x)
-        print(x.shape)
+        # print(x.shape)
 
         for i in range(8): ## num conv layers
             x = tf.nn.relu(self.hidconv2d(x))
-            print(x.shape)
+            # print(x.shape)
 
         x = self.flatten(x)
 
-        print(x.shape)
+        # print(x.shape)
 
-        breakpoint()
+        # breakpoint()
 
         x = self.fullLayer(x)
 
-        print(x.shape)
-        breakpoint()
+        # print(x.shape)
+        # breakpoint()
         return x
 
 
@@ -196,6 +204,20 @@ if __name__ == "__main__":
         labels = np.fromfile(prefix + '-labels.idx1-ubyte', dtype = 'ubyte' )[2 * intType.itemsize:]
         return data, labels
 
+
+
+    def oneHotEncode(label):
+        onehot = list()
+        for value in label:
+            row = np.zeros((10,))
+            # breakpoint()
+            row[value] = 1.0
+            label = onehot.append(row)
+            # print(label)
+        label = tf.cast(onehot, dtype = tf.float32)
+        # breakpoint()
+        return label
+
     trainingImages, trainingLabels = loadMNIST( "train")
     # testImages, testLabels = loadMNIST( "t10k")
 
@@ -204,6 +226,11 @@ if __name__ == "__main__":
 
     trainingImages = tf.expand_dims(trainImages[0:40000] / 255.0, -1)
     validImages = tf.expand_dims(trainImages[40001:60000] / 255.0, -1)
+    # testImages = tf.expand_dims(testImages / 255.0, -1)
+
+    trainingLabels = oneHotEncode(trainingLabels)
+    # breakpoint()
+
 
     num_inputs = 1
     num_outputs = 1
@@ -212,7 +239,7 @@ if __name__ == "__main__":
     layer_depths = config["conv"]["layer_depths"]
     layer_kernel_sizes = config["conv"]["layer_kernel_sizes"]
 
-    print(trainingImages.shape)
+    # print(trainingImages.shape)
 
     num_samples = config["data"]["num_samples"]
     num_iters = config["learning"]["num_iters"]
@@ -241,20 +268,8 @@ if __name__ == "__main__":
     rng.reset_from_seed(0x43966E87BD57227011B5B03B58785EC1)
 
 
-#     x = rng.uniform(shape=(num_samples, num_inputs))
-#     w = rng.normal(shape=(num_inputs, num_outputs))
-#     b = rng.normal(shape=(1, num_outputs))
-#     y = rng.normal(
-#         shape=(num_samples, num_outputs),
-#         mean=x @ w + b,
-#         stddev=config["data"]["noise_stddev"],
-#     )
-
-#     linear = Linear(num_inputs, num_outputs)
 
     bar = trange(num_iters)
-
-
 
     for i in bar:
         batch_indices = rng.uniform(
@@ -262,23 +277,31 @@ if __name__ == "__main__":
         )
         with tf.GradientTape() as tape:
             x_batch = tf.gather(trainingImages, batch_indices)
-            y_batch = tf.reshape(tf.gather(trainingLabels, batch_indices), (batch_size, 1))
+            y_batch = tf.reshape(tf.gather(trainingLabels, batch_indices), (batch_size, 10))
+            y_batch = tf.cast(y_batch, dtype=tf.float32)
 
-            # breakpoint()
+
             y_hat = classifier(x_batch)
 
             loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
 
+            # breakpoint()
 
-        grads = tape.gradient(loss, conv.trainable_variables) 
-        grad_update(step_size, conv.trainable_variables, grads)
+        grads = tape.gradient(loss, classifier.trainable_variables) 
+        grad_update(step_size, classifier.trainable_variables, grads)
 
         step_size *= decay_rate 
 
+        prediction = tf.math.argmax(y_hat, axis=0)
+        prediction = tf.cast(prediction, dtype = tf.float32)
+        equality = tf.math.equal(prediction, y_batch)
+        accuracy = tf.math.reduce_mean(tf.cast(equality, tf.float32))
+
         if i % refresh_rate == (refresh_rate - 1):
             bar.set_description(
-                f"Step {i}; Loss => {loss.numpy():0.4f}, step_size => {step_size:0.4f}"
+                f"Step {i}; Loss => {loss.numpy():0.4f}, Accuracy => {accuracy:0.4f}, step_size => {step_size:0.4f}"
             )
+
             bar.refresh()
 
 #     fig, ax = plt.subplots()
