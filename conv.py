@@ -211,7 +211,7 @@ if __name__ == "__main__":
         # breakpoint()
         return label
 
-    trainingImages, trainingLabels = loadMNIST( "train")
+    trainingImages, trainLabels = loadMNIST( "train")
     # testImages, testLabels = loadMNIST( "t10k")
 
     trainImages = tf.expand_dims(trainingImages / 255.0, -1) # normalize grayscale to 0-1
@@ -220,10 +220,10 @@ if __name__ == "__main__":
     trainingImages = tf.expand_dims(trainImages[0:40000] / 255.0, -1)
     validImages = tf.expand_dims(trainImages[40001:60000] / 255.0, -1)
 
-    trainingLabels = trainingLabels[0:40000]
+    trainingLabels = trainLabels[0:40000]
+    validLabels = trainLabels[40001:60000]
+    
     trainingLabels = oneHotEncode(trainingLabels)
-     
-    validLabels = trainingLabels[40001:60000]
     validLabels = oneHotEncode(validLabels)
     
 
@@ -276,8 +276,10 @@ if __name__ == "__main__":
             shape=[batch_size], maxval=num_samples, dtype=tf.int32
         )
         with tf.GradientTape() as tape:
-            x_batch = tf.gather(trainingImages, batch_indices)
-            y_batch = tf.gather(trainingLabels, batch_indices)
+            # x_batch = tf.gather(trainingImages, batch_indices)
+            # y_batch = tf.gather(trainingLabels, batch_indices)
+            x_batch = tf.gather(validImages, batch_indices)
+            y_batch = tf.gather(validLabels, batch_indices)
             y_batch = tf.cast(y_batch, dtype=tf.float32)
             x_batch = tf.cast(x_batch, dtype=tf.float32)
 
@@ -288,7 +290,7 @@ if __name__ == "__main__":
 
             # loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
 
-            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y_hat +(1e-8), y_batch + (1e-8)))
+            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y_hat +(1e-9), y_batch + (1e-9)))
 
             # breakpoint()
 

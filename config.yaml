@@ -1,16 +1,34 @@
+# learning:
+#   step_size: 0.1
+#   batch_size: 1000
+#   num_iters: 2000
+#   decay_rate: 0.999
+# data:
+#   num_samples: 800
+#   noise_stddev: 0.1
+# mlp:
+#   num_hidden_layers: 4
+#   hidden_layer_width: 30
+# conv:
+#   layer_depths: 64
+#   layer_kernel_sizes: 3
+#   num_conv_layers: 8
+# display:
+#   refresh_rate: 10
+
 learning:
   step_size: 0.1
-  batch_size: 800
-  num_iters: 500
+  batch_size: 1000
+  num_iters: 2000
   decay_rate: 0.999
 data:
   num_samples: 800
   noise_stddev: 0.1
 mlp:
-  num_hidden_layers: 16
+  num_hidden_layers: 4
   hidden_layer_width: 30
 conv:
-  layer_depths: 32
+  layer_depths: 64
   layer_kernel_sizes: 3
   num_conv_layers: 8
 display:
