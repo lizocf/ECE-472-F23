@@ -3,6 +3,8 @@
 import tensorflow as tf
 import numpy as np
 
+from typing import List, Tuple
+
 class Linear(tf.Module):
     def __init__(self, num_inputs, num_outputs, bias=True):
         rng = tf.random.get_global_generator()
@@ -91,8 +93,8 @@ class Conv2d(tf.Module):
         return f
 
 class Classifier(tf.Module):
-    def __init__(self, num_inputs, num_outputs, input_depth: int, layer_depths: list[int],
-                 layer_kernel_sizes: list[tuple[int, int]], num_classes: int,
+    def __init__(self, num_inputs, num_outputs, input_depth: int, layer_depths: List[int],
+                 layer_kernel_sizes: List[Tuple[int, int]], num_classes: int,
                   num_hidden_layers, hidden_layer_width, 
                   hidden_activation= tf.identity, output_activation=tf.identity):
 
@@ -101,25 +103,21 @@ class Classifier(tf.Module):
         stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))  ##
 
         self.num_hidden_layers = num_hidden_layers
-        
         self.hidden_activation = hidden_activation
-
         self.output_activation = output_activation
         
 
         self.infilter = tf.Variable(
-            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, input_depth, layer_depths],
-            stddev=stddev),
-            # trainable=True,
-            name="conv/in"
+            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, input_depth, layer_depths], stddev=stddev),
+            trainable=True,
+            name="conv/in",
         )
 
 
         self.hidfilter = tf.Variable(
-            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, layer_depths, layer_depths],
-            stddev=stddev),
+            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, layer_depths, layer_depths], stddev=stddev),
             trainable=True,
-            name="conv/hid"
+            name="conv/hid",
         )
 
         self.inconv2d = Conv2d(self.infilter, [1,1,1,1])
@@ -130,12 +128,10 @@ class Classifier(tf.Module):
         self.fullLayer = MLP(num_inputs, num_outputs, self.num_hidden_layers, layer_depths,
                              hidden_layer_width, self.hidden_activation, self.output_activation)
 
-        # breakpoint()
 
     def flatten(self, x):
         num_features = x.shape[1] * x.shape[2] * x.shape[3]
         output = tf.reshape(x, [-1, num_features])
-        # breakpoint()
         return output
 
                              
@@ -144,11 +140,13 @@ class Classifier(tf.Module):
         # print(x.shape)
 
         for i in range(8): ## num conv layers
-            x = tf.nn.dropout(tf.nn.relu(self.hidconv2d(x)), .5)
-            # x = tf.nn.relu(self.hidconv2d(x))
+            # x = tf.nn.dropout(tf.nn.relu(self.hidconv2d(x)), .5)
+            x = self.hidden_activation(self.hidconv2d(x))
             # print(x.shape)
 
         x = self.flatten(x)
+        
+        # print(x.shape)
 
         x = self.fullLayer(x)
         
@@ -158,11 +156,42 @@ class Classifier(tf.Module):
 
         return x
 
+class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
+
+    def __init__(self, learning_rate=1e-3, beta_1=0.9, beta_2=0.999, ep=1e-7):
+      # Initialize optimizer parameters and variable slots
+      self.beta_1 = beta_1
+      self.beta_2 = beta_2
+      self.learning_rate = learning_rate
+      self.ep = ep
+      self.t = 1.
+      self.v_dvar, self.s_dvar = [], []
+      self.built = False
+
+    def apply_gradients(self, grads, vars):
+      # Initialize variables on the first call
+      if not self.built:
+        for var in vars:
+          v = tf.Variable(tf.zeros(shape=var.shape))
+          s = tf.Variable(tf.zeros(shape=var.shape))
+          self.v_dvar.append(v)
+          self.s_dvar.append(s)
+        self.built = True
+      # Update the model variables given their gradients
+      for i, (d_var, var) in enumerate(zip(grads, vars)):
+        self.v_dvar[i].assign(self.beta_1*self.v_dvar[i] + (1-self.beta_1)*d_var)
+        self.s_dvar[i].assign(self.beta_2*self.s_dvar[i] + (1-self.beta_2)*tf.square(d_var))
+        v_dvar_bc = self.v_dvar[i]/(1-(self.beta_1**self.t))
+        s_dvar_bc = self.s_dvar[i]/(1-(self.beta_2**self.t))
+        var.assign_sub(self.learning_rate*(v_dvar_bc/(tf.sqrt(s_dvar_bc) + self.ep)))
+      self.t += 1.
+      return
+
 
 def grad_update(step_size, variables, grads):
     for var, grad in zip(variables, grads):
         var.assign_sub(step_size * grad)
-        # breakpoint()
+
 
 
 if __name__ == "__main__":
@@ -229,9 +258,6 @@ if __name__ == "__main__":
 
     # testImages = tf.expand_dims(testImages / 255.0, -1)
 
-    # breakpoint()
-
-
     num_inputs = 1
     num_outputs = 1
     input_layer = 1
@@ -254,8 +280,10 @@ if __name__ == "__main__":
 
     classifier = Classifier(num_inputs, num_outputs, input_layer, 
                             layer_depths, layer_kernel_sizes, num_classes,
-                            num_hidden_layers, hidden_layer_width, tf.nn.relu, tf.nn.sigmoid)
+                            num_hidden_layers, hidden_layer_width, tf.nn.relu, tf.nn.softmax)
 
+    optimizer = Adam()
+    
     ## DISPLAY TRAINING IMAGES ##
     # first_image = np.array(trainingImages[0], dtype='float')
     # pixels = first_image.reshape((28, 28))
@@ -276,57 +304,38 @@ if __name__ == "__main__":
             shape=[batch_size], maxval=num_samples, dtype=tf.int32
         )
         with tf.GradientTape() as tape:
-            # x_batch = tf.gather(trainingImages, batch_indices)
-            # y_batch = tf.gather(trainingLabels, batch_indices)
-            x_batch = tf.gather(validImages, batch_indices)
-            y_batch = tf.gather(validLabels, batch_indices)
+            x_batch = tf.gather(trainingImages, batch_indices)
+            y_batch = tf.gather(trainingLabels, batch_indices)
+            # x_batch = tf.gather(validImages, batch_indices)
+            # y_batch = tf.gather(validLabels, batch_indices)
             y_batch = tf.cast(y_batch, dtype=tf.float32)
             x_batch = tf.cast(x_batch, dtype=tf.float32)
 
-
             y_hat = classifier(x_batch)
 
-            # breakpoint()
+            loss = tf.math.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_batch, logits = y_hat))
 
-            # loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
-
-            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y_hat +(1e-9), y_batch + (1e-9)))
-
-            # breakpoint()
 
         grads = tape.gradient(loss, classifier.trainable_variables) 
         
-        # print(grads[0])
-        grad_update(step_size, classifier.trainable_variables, grads)
 
-        step_size *= decay_rate 
+        # print(y_hat[0], y_batch[0])
+        print(grads[0])
+        # breakpoint()
+
+        optimizer.apply_gradients(grads, classifier.trainable_variables)
+        # grad_update(step_size, classifier.trainable_variables, grads)
+
 
         prediction = tf.math.argmax(y_hat, axis=0)
         prediction = tf.cast(prediction, dtype = tf.float32)
         equality = tf.math.equal(prediction, y_batch)
         accuracy = tf.math.reduce_mean(tf.cast(equality, tf.float32))
 
-    
+        step_size *= decay_rate 
 
         if i % refresh_rate == (refresh_rate - 1):
             bar.set_description(
-                f"Step {i}; Loss => {loss}, Accuracy => {accuracy:0.4f}, step_size => {step_size:0.4f}"
+                f"Step {i}; Loss => {loss}, Accuracy => {accuracy:.0%}, step_size => {step_size:0.4f}"
             )
-
             bar.refresh()
-
-#     fig, ax = plt.subplots()
-
-#     ax.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
-
-#     a = tf.linspace(tf.reduce_min(x), tf.reduce_max(x), 100)[:, tf.newaxis]
-#     ax.plot(a.numpy().squeeze(), linear(a).numpy().squeeze(), "-")
-
-#     ax.set_xlabel("x")
-#     ax.set_ylabel("y")
-#     ax.set_title("Linear fit using SGD")
-    
-#     h = ax.set_ylabel("y", labelpad=10)
-#     h.set_rotation(0)
-
-#     fig.savefig("plot.pdf")
