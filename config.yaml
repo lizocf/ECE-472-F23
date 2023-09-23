@@ -1,7 +1,7 @@
 # TRAINING CONFIG ##
 learning:
   step_size: 0.05
-  batch_size: 10
+  batch_size: 300
   num_iters: 6000
   decay_rate: 0.999
 data:

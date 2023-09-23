@@ -108,16 +108,25 @@ class Classifier(tf.Module):
         
 
         self.infilter = tf.Variable(
-            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, input_depth, layer_depths], stddev=stddev),
+            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, input_depth, layer_depths], 
+            stddev= tf.math.sqrt(2 / (input_depth + layer_depths))) ,
             trainable=True,
             name="conv/in",
         )
 
 
         self.hidfilter = tf.Variable(
-            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, layer_depths, layer_depths], stddev=stddev),
+            rng.normal(shape=[layer_kernel_sizes, layer_kernel_sizes, layer_depths, layer_depths], 
+            stddev= tf.math.sqrt(2 / (layer_depths*2)) ),
             trainable=True,
             name="conv/hid",
+        )
+
+        self.ffilter = tf.Variable(
+            rng.normal(shape=[1, 1, layer_depths, 10], 
+            stddev= tf.math.sqrt(2 / (layer_depths + 10)) ),
+            trainable=True,
+            name="conv/f"
         )
 
         self.inconv2d = Conv2d(self.infilter, [1,1,1,1])
@@ -125,11 +134,12 @@ class Classifier(tf.Module):
 
         self.hidconv2d = Conv2d(self.hidfilter, [1,1,1,1])
 
-        self.fullLayer = MLP(num_inputs, num_outputs, self.num_hidden_layers, layer_depths,
-                             hidden_layer_width, self.hidden_activation, self.output_activation)
+        # self.fullLayer = MLP(num_inputs, num_outputs, self.num_hidden_layers, layer_depths,
+        #                      hidden_layer_width, self.hidden_activation, self.output_activation)
 
+        self.fullLayer = Conv2d(self.ffilter, [1,1,1,1])
 
-    def flatten(self, x):
+    def flatten(self, x): 
         num_features = x.shape[1] * x.shape[2] * x.shape[3]
         output = tf.reshape(x, [-1, num_features])
         return output
@@ -144,7 +154,9 @@ class Classifier(tf.Module):
             x = self.hidden_activation(self.hidconv2d(x))
             # print(x.shape)
 
-        x = self.flatten(x)
+        x = tf.math.reduce_mean(x, axis = [1,2], keepdims=True)
+
+        # x = self.flatten(x)
         
         # print(x.shape)
 
@@ -152,9 +164,10 @@ class Classifier(tf.Module):
         
         # x = tf.nn.softmax(x)
         # breakpoint()
-        # print(x.shape)
+        # print(x[0])
+        # exit()
 
-        return x
+        return tf.squeeze(x)
 
 class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
 
@@ -193,7 +206,6 @@ def grad_update(step_size, variables, grads):
         var.assign_sub(step_size * grad)
 
 
-
 if __name__ == "__main__":
     import argparse
 
@@ -225,7 +237,6 @@ if __name__ == "__main__":
 
         labels = np.fromfile(prefix + '-labels.idx1-ubyte', dtype = 'ubyte' )[2 * intType.itemsize:]
         return data, labels
-
 
 
     def oneHotEncode(label):
@@ -298,10 +309,9 @@ if __name__ == "__main__":
 
 
     bar = trange(num_iters)
-
     for i in bar:
         batch_indices = rng.uniform(
-            shape=[batch_size], maxval=num_samples, dtype=tf.int32
+        shape=[batch_size], maxval=num_samples, dtype=tf.int32
         )
         with tf.GradientTape() as tape:
             x_batch = tf.gather(trainingImages, batch_indices)
@@ -320,15 +330,16 @@ if __name__ == "__main__":
         
 
         # print(y_hat[0], y_batch[0])
-        print(grads[0])
+        # print(grads[0])
         # breakpoint()
 
         optimizer.apply_gradients(grads, classifier.trainable_variables)
         # grad_update(step_size, classifier.trainable_variables, grads)
 
 
-        prediction = tf.math.argmax(y_hat, axis=0)
-        prediction = tf.cast(prediction, dtype = tf.float32)
+        prediction = tf.math.argmax(y_hat, axis=-1)
+        y_batch = tf.math.argmax(y_batch, axis=-1)
+        # prediction = tf.cast(prediction, dtype = tf.float32)
         equality = tf.math.equal(prediction, y_batch)
         accuracy = tf.math.reduce_mean(tf.cast(equality, tf.float32))
 
