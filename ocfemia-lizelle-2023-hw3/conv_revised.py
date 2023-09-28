@@ -34,7 +34,9 @@ class Conv2d(tf.Module):
         f = tf.nn.conv2d(x, self.infilter, [1,1,1,1], padding = 'VALID')
         for i in range(8):
             f = self.hidden_activation(tf.nn.conv2d(f, self.hidfilter, [1,1,1,1], padding = 'VALID'))
+        print(f.shape)
         f = tf.math.reduce_mean(f, axis = [1,2], keepdims=True)
+        print(f.shape)
         f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'VALID')
         return f
 
@@ -129,8 +131,8 @@ if __name__ == "__main__":
         # breakpoint()
         return label
 
-    trainingImages, trainLabels = loadMNIST( "train")
-    testImages, testLabels = loadMNIST( "t10k")
+    trainingImages, trainLabels = loadMNIST( "/home/lizocf/ECE-471-DL/ocfemia-lizelle-2023-hw3/datasets/train")
+    testImages, testLabels = loadMNIST( "/home/lizocf/ECE-471-DL/ocfemia-lizelle-2023-hw3/datasets/t10k")
 
     trainImages = tf.expand_dims(trainingImages / 255.0, -1) # normalize grayscale to 0-1
     trainImages = tf.cast(trainingImages, dtype=tf.float32)

@@ -1,0 +1,16 @@
+# TRAINING CONFIG ##
+learning:
+  step_size: 0.05
+  batch_size: 300
+  num_iters: 200
+  decay_rate: 0.999
+data:
+  num_samples: 800
+  noise_stddev: 0.1
+conv:
+  layer_depths: 32
+  layer_kernel_sizes: 3
+  num_conv_layers: 8
+  num_res_blocks: [0,2,2,2,2]
+display:
+  refresh_rate: 5
