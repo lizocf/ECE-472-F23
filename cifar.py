@@ -31,8 +31,8 @@ class Conv2d(tf.Module):
         #     name="conv/f"
         # )
         self.ffilter = tf.Variable(
-            rng.normal(shape=[1, 1, layer_depths, num_classes], 
-            stddev= tf.math.sqrt(2 / (layer_depths + num_classes)) ),
+            rng.normal(shape=[1, 1, layer_depths, input_depth], 
+            stddev= tf.math.sqrt(2 / (layer_depths + input_depth)) ),
             trainable=True,
             name="conv/f"
         )
@@ -47,14 +47,17 @@ class Conv2d(tf.Module):
         #     # breakpoint()
         #     return f
         # else:
+        # print(x.shape)
         f = tf.nn.conv2d(x, self.infilter, [1,1,1,1], padding = 'SAME')
         # breakpoint()
+        # print(f.shape)
         for i in range(8):
             f = self.hidden_activation(tf.nn.conv2d(f, self.hidfilter, [1,1,1,1], padding = 'SAME'))
             # print(f.shape)
         # breakpoint()
         # f = tf.math.reduce_mean(f, axis = [1,2], keepdims=True)
-        # f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'SAME')
+        f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'SAME')
+        # print(f.shape)
         return f
 
 class Conv1x1(tf.Module):
@@ -95,15 +98,16 @@ class GroupNorm(tf.Module): # see Group Normalization by Wu et al. https://arxiv
         self.G = min(self.G,C)
         # breakpoint()
         x = tf.reshape(x, [-1, self.G, C // self.G, H, W])
-        print(x.shape)
+        # print(x.shape)
         mean, var = tf.nn.moments(x, [2, 3, 4], keepdims=True)
         x = (x - mean) / tf.sqrt(var + self.eps)
-        breakpoint()
+        # breakpoint()
         x = tf.reshape(x, [-1, C, H, W])
-        print(x.shape)
+        # breakpoint()
+        # print(x.shape)
         x = x * self.gamma + self.beta
         x = tf.transpose(x, [0,2,3,1]) # revert back to [bs,h,w,ch]
-        print(x.shape)
+        # print(x.shape)
         # breakpoint()
         return x
 
@@ -117,6 +121,7 @@ class ResidualBlock(tf.Module):
         f = self.conv2d(x) # [bs,1,1,10]
         # breakpoint()
         f = self.gnorm(f) # [bs,32,32,3]
+        # breakpoint()
         x = self.hidden_activation(f + x)
         # breakpoint()
         return x
@@ -187,6 +192,8 @@ if __name__ == "__main__":
     import yaml
 
     from tqdm import trange
+    
+    from sklearn.metrics import top_k_accuracy_score
 
     parser = argparse.ArgumentParser(
         prog="Linear",
@@ -237,9 +244,11 @@ if __name__ == "__main__":
 
     trainingLabels = tf.expand_dims(trainingLabels, -1)
     trainingLabels = oneHotEncode(trainingLabels)
+    
+    trainingImage = tf.image.flip_left_right(trainingImages)
 
-    # plt.imshow(trainingImages[10001])
-    # plt.show()
+    plt.imshow(trainingImages[1])
+    plt.show()
 
     # data = data_batch_1[b'data']
     # data = data.reshape(len(data),3,32,32).transpose(0,2,3,1) # correct format: (size,h,w,channel)
@@ -290,7 +299,7 @@ if __name__ == "__main__":
             loss = tf.math.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_batch, logits = y_hat))
 
         grads = tape.gradient(loss, classifier.trainable_variables) 
-        breakpoint()
+        # breakpoint()
 
 
         optimizer.apply_gradients(grads, classifier.trainable_variables)
@@ -301,21 +310,46 @@ if __name__ == "__main__":
         accuracy = tf.math.reduce_mean(tf.cast(equality, tf.float32))
 
         # breakpoint()
-        step_size *= decay_rate 
 
-        if i % refresh_rate == (refresh_rate - 1):
-            bar.set_description(
-                f"Step {i}; Loss => {loss}, Accuracy => {accuracy:.0%}, step_size => {step_size:0.4f}"
-            )
-            if accuracy >= .955:
-                with open('acc_loss_config.txt', 'a') as f:
-                    f.write(f"-----STEP_SIZE: {step_size}, BATCH_SIZE: {batch_size}, LAYER_DEPTH: {layer_depths} -----\n")
-                    f.write(f"Accuracy: {accuracy:.0%}. Loss: {loss}. Steps Taken: {i}. \n")
-                exit()
-            bar.refresh()
+        # accuracy = top_k_accuracy_score(y_batch, y_hat, k=5)
+        # breakpoint()
+
+        # breakpoint()
+        # step_size *= decay_rate 
+
+        # if i % refresh_rate == (refresh_rate - 1):
+        #     bar.set_description(
+        #         f"Step {i}; Loss => {loss}, Accuracy => {accuracy:.0%}, step_size => {step_size:0.4f}"
+        #     )
+        #     if accuracy >= .955:
+        #         with open('acc_loss_config.txt', 'a') as f:
+        #             f.write(f"-----STEP_SIZE: {step_size}, BATCH_SIZE: {batch_size}, LAYER_DEPTH: {layer_depths} -----\n")
+        #             f.write(f"Accuracy: {accuracy:.0%}. Loss: {loss}. Steps Taken: {i}. \n")
+        #         exit()
+        #     bar.refresh()
 
 
 # lzl notes:
 # - MNIST model works incredibly slow with the cifar dataset, res. implementation will speed up this process
 # - input & output layers must be same size for addition -> padding = SAME
 # - data augmentation: try flipping 50%? 
+
+# FIRST TRAINING ATTEMPT:
+# num_iters: 3000
+# Loss => 0.9513286352157593, Accuracy => 79% (top_k_accuracy_score NOT implemented this run)
+# learning:
+#   step_size: 0.05
+#   batch_size: 300
+#   num_iters: 3000
+#   decay_rate: 0.999
+# data:
+#   num_samples: 800
+#   noise_stddev: 0.1
+# conv:
+#   layer_depths: 32
+#   layer_kernel_sizes: 3
+#   num_conv_layers: 8
+#   num_res_blocks: [0,2,2,2,2]
+# display:
+#   refresh_rate: 1
+

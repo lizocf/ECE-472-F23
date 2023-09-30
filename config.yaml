@@ -2,7 +2,7 @@
 learning:
   step_size: 0.05
   batch_size: 300
-  num_iters: 200
+  num_iters: 3000
   decay_rate: 0.999
 data:
   num_samples: 800
@@ -13,7 +13,7 @@ conv:
   num_conv_layers: 8
   num_res_blocks: [0,2,2,2,2]
 display:
-  refresh_rate: 5
+  refresh_rate: 1
 
 # dropout over channels for convolutions
 # disable drop out for
