@@ -24,26 +24,54 @@ class Conv2d(tf.Module):
             name="conv/hid",
         )
 
+        # self.ffilter = tf.Variable(
+        #     rng.normal(shape=[1, 1, input_depth, num_classes], 
+        #     stddev= tf.math.sqrt(2 / (input_depth + num_classes)) ),
+        #     trainable=True,
+        #     name="conv/f"
+        # )
         self.ffilter = tf.Variable(
-            rng.normal(shape=[1, 1, input_depth, num_classes], 
+            rng.normal(shape=[1, 1, layer_depths, num_classes], 
             stddev= tf.math.sqrt(2 / (layer_depths + num_classes)) ),
             trainable=True,
             name="conv/f"
         )
+
         
     def __call__(self, x, final=False):
-        if final:
-            f = tf.math.reduce_mean(x, axis = [1,2], keepdims=True)
-            f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'SAME')
-            return f
-        else: 
-            f = tf.nn.conv2d(x, self.infilter, [1,1,1,1], padding = 'SAME')
-            # breakpoint()
-            for i in range(8):
-                f = self.hidden_activation(tf.nn.conv2d(f, self.hidfilter, [1,1,1,1], padding = 'SAME'))
-                # breakpoint()
-            # breakpoint()
-            return f
+        # if final:
+        #     # print(x.shape)
+        #     f = tf.math.reduce_mean(x, axis = [1,2], keepdims=True)
+        #     # print(f.shape)
+        #     f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'SAME')
+        #     # breakpoint()
+        #     return f
+        # else:
+        f = tf.nn.conv2d(x, self.infilter, [1,1,1,1], padding = 'SAME')
+        # breakpoint()
+        for i in range(8):
+            f = self.hidden_activation(tf.nn.conv2d(f, self.hidfilter, [1,1,1,1], padding = 'SAME'))
+            # print(f.shape)
+        # breakpoint()
+        # f = tf.math.reduce_mean(f, axis = [1,2], keepdims=True)
+        # f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'SAME')
+        return f
+
+class Conv1x1(tf.Module):
+    def __init__(self, layer_kernel_sizes, input_depth, layer_depths, num_classes, hidden_activation):
+        rng = tf.random.get_global_generator()
+        self.hidden_activation = hidden_activation
+
+        self.ffilter = tf.Variable(
+            rng.normal(shape=[1, 1, input_depth, num_classes], 
+            stddev= tf.math.sqrt(2 / (input_depth + num_classes)) ),
+            trainable=True,
+            name="conv/f"
+        )
+    def __call__(self, x):
+        f = tf.math.reduce_mean(x, axis = [1,2], keepdims=True)
+        f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'SAME')
+        return f
 
 class GroupNorm(tf.Module): # see Group Normalization by Wu et al. https://arxiv.org/pdf/1803.08494.pdf 
     def __init__(self, G=32, eps=1e-5):
@@ -67,11 +95,15 @@ class GroupNorm(tf.Module): # see Group Normalization by Wu et al. https://arxiv
         self.G = min(self.G,C)
         # breakpoint()
         x = tf.reshape(x, [-1, self.G, C // self.G, H, W])
+        print(x.shape)
         mean, var = tf.nn.moments(x, [2, 3, 4], keepdims=True)
         x = (x - mean) / tf.sqrt(var + self.eps)
-
-        x = tf.reshape(x, [-1, C, H, W]) * self.gamma + self.beta
+        breakpoint()
+        x = tf.reshape(x, [-1, C, H, W])
+        print(x.shape)
+        x = x * self.gamma + self.beta
         x = tf.transpose(x, [0,2,3,1]) # revert back to [bs,h,w,ch]
+        print(x.shape)
         # breakpoint()
         return x
 
@@ -84,11 +116,9 @@ class ResidualBlock(tf.Module):
     def __call__(self,x):
         f = self.conv2d(x) # [bs,1,1,10]
         # breakpoint()
-        f = self.gnorm(x) # [bs, 32,32,3]
+        f = self.gnorm(f) # [bs,32,32,3]
+        x = self.hidden_activation(f + x)
         # breakpoint()
-        # breakpoint()
-        x = f + x
-        
         return x
         
 
@@ -98,15 +128,17 @@ class Classifier(tf.Module):
         self.num_res_blocks = num_res_blocks
         self.hidden_activation = hidden_activation
         self.resblock = ResidualBlock(layer_kernel_sizes,input_depth,layer_depths,num_classes, hidden_activation)
-        self.conv2d = Conv2d(layer_kernel_sizes, input_depth, layer_depths, num_classes, hidden_activation)
+        self.conv1x1 = Conv1x1(layer_kernel_sizes, input_depth, layer_depths, num_classes, hidden_activation)
 
     def __call__(self, x):
         for i in range(3):
             x = self.resblock(x)
-        x = tf.math.reduce_mean(x, axis = [1,2], keepdims=True)
+            # print(x.shape)
+        # print(x.shape)
         # breakpoint()
-        x = self.conv2d(x, final=True)
+        x = self.conv1x1(x)
         x = tf.squeeze(x)
+        # breakpoint()
         return x
 
 class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core

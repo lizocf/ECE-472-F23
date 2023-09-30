@@ -34,7 +34,7 @@ class Conv2d(tf.Module):
         f = tf.nn.conv2d(x, self.infilter, [1,1,1,1], padding = 'VALID')
         for i in range(8):
             f = self.hidden_activation(tf.nn.conv2d(f, self.hidfilter, [1,1,1,1], padding = 'VALID'))
-        print(f.shape)
+            print(f.shape)
         f = tf.math.reduce_mean(f, axis = [1,2], keepdims=True)
         print(f.shape)
         f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'VALID')
