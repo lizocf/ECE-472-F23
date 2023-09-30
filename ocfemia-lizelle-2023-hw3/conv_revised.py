@@ -200,6 +200,7 @@ if __name__ == "__main__":
             loss = tf.math.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_batch, logits = y_hat))
 
         grads = tape.gradient(loss, classifier.trainable_variables) 
+        breakpoint()
         
         optimizer.apply_gradients(grads, classifier.trainable_variables)
 

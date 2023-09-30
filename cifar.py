@@ -25,32 +25,43 @@ class Conv2d(tf.Module):
         )
 
         self.ffilter = tf.Variable(
-            rng.normal(shape=[1, 1, layer_depths, num_classes], 
+            rng.normal(shape=[1, 1, input_depth, num_classes], 
             stddev= tf.math.sqrt(2 / (layer_depths + num_classes)) ),
             trainable=True,
             name="conv/f"
         )
         
     def __call__(self, x, final=False):
-        f = tf.nn.conv2d(x, self.infilter, [1,1,1,1], padding = 'SAME')
-        # breakpoint()
-        for i in range(8):
-            f = self.hidden_activation(tf.nn.conv2d(f, self.hidfilter, [1,1,1,1], padding = 'SAME'))
-            # breakpoint()
-        # breakpoint()
         if final:
-            f = tf.math.reduce_mean(f, axis = [1,2], keepdims=True)
+            f = tf.math.reduce_mean(x, axis = [1,2], keepdims=True)
             f = tf.nn.conv2d(f, self.ffilter, [1,1,1,1], padding = 'SAME')
-        return f
+            return f
+        else: 
+            f = tf.nn.conv2d(x, self.infilter, [1,1,1,1], padding = 'SAME')
+            # breakpoint()
+            for i in range(8):
+                f = self.hidden_activation(tf.nn.conv2d(f, self.hidfilter, [1,1,1,1], padding = 'SAME'))
+                # breakpoint()
+            # breakpoint()
+            return f
 
 class GroupNorm(tf.Module): # see Group Normalization by Wu et al. https://arxiv.org/pdf/1803.08494.pdf 
     def __init__(self, G=32, eps=1e-5):
+        self.G = G
+        self.eps = eps
+        self.gamma = tf.Variable(
+            tf.ones(shape = [1,3,1,1]), 
+            trainable=True, 
+            name="gn/gamma")
+        self.beta = tf.Variable(
+            tf.ones(shape = [1,3,1,1]), 
+            trainable=True, 
+            name="gn/beta")
+            
+    def __call__(self,x):
         # x: input features with shape [N,C,H,W]
         # gamma, beta: scale and offset, with shape [1,C,1,1]
         # G: number of groups for GN
-        self.G = G
-        self.eps = eps
-    def __call__(self,x):
         x = tf.transpose(x, [0,3,1,2]) # change [bs,h,w,ch] to [bs,ch,h,w] according to paper
         N, C, H, W = x.get_shape().as_list()
         self.G = min(self.G,C)
@@ -59,21 +70,9 @@ class GroupNorm(tf.Module): # see Group Normalization by Wu et al. https://arxiv
         mean, var = tf.nn.moments(x, [2, 3, 4], keepdims=True)
         x = (x - mean) / tf.sqrt(var + self.eps)
 
-        gamma = tf.Variable(
-            tf.ones(shape=[C]), 
-            trainable=True, 
-            name='gn/gamma')
-
-        beta = tf.Variable(
-            tf.ones(shape=[C]), 
-            trainable=True, 
-            name='gn/beta')
-
-        gamma = tf.reshape(gamma, [1, C, 1, 1])
-        beta = tf.reshape(beta, [1, C, 1, 1])
-
-        x = tf.reshape(x, [-1, C, H, W]) * gamma + beta
+        x = tf.reshape(x, [-1, C, H, W]) * self.gamma + self.beta
         x = tf.transpose(x, [0,2,3,1]) # revert back to [bs,h,w,ch]
+        # breakpoint()
         return x
 
 
@@ -81,13 +80,15 @@ class ResidualBlock(tf.Module):
     def __init__(self, layer_kernel_sizes,input_depth,layer_depths,num_classes, hidden_activation):
         self.hidden_activation = hidden_activation
         self.conv2d = Conv2d(layer_kernel_sizes, input_depth, layer_depths, num_classes, hidden_activation)
-        self.gnorm = GroupNorm()
+        self.gnorm = GroupNorm(G=32)
     def __call__(self,x):
         f = self.conv2d(x) # [bs,1,1,10]
         # breakpoint()
         f = self.gnorm(x) # [bs, 32,32,3]
         # breakpoint()
+        # breakpoint()
         x = f + x
+        
         return x
         
 
@@ -102,8 +103,11 @@ class Classifier(tf.Module):
     def __call__(self, x):
         for i in range(3):
             x = self.resblock(x)
+        x = tf.math.reduce_mean(x, axis = [1,2], keepdims=True)
+        # breakpoint()
         x = self.conv2d(x, final=True)
-        return tf.squeeze(x)
+        x = tf.squeeze(x)
+        return x
 
 class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
     def __init__(self, learning_rate=1e-3, beta_1=0.9, beta_2=0.999, ep=1e-7):
@@ -126,6 +130,7 @@ class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
         self.built = True
       # Update the model variables given their gradients
       for i, (d_var, var) in enumerate(zip(grads, vars)):
+        # breakpoint()
         self.v_dvar[i].assign(self.beta_1*self.v_dvar[i] + (1-self.beta_1)*d_var)
         self.s_dvar[i].assign(self.beta_2*self.s_dvar[i] + (1-self.beta_2)*tf.square(d_var))
         v_dvar_bc = self.v_dvar[i]/(1-(self.beta_1**self.t))
@@ -138,7 +143,7 @@ class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
 def grad_update(step_size, variables, grads):
     for var, grad in zip(variables, grads):
         var.assign_sub(step_size * grad)
-        breakpoint()
+        
 
 
 if __name__ == "__main__":
@@ -253,6 +258,7 @@ if __name__ == "__main__":
             loss = tf.math.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_batch, logits = y_hat))
 
         grads = tape.gradient(loss, classifier.trainable_variables) 
+        breakpoint()
 
 
         optimizer.apply_gradients(grads, classifier.trainable_variables)
