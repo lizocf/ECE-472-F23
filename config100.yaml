@@ -2,26 +2,17 @@
 learning:
   step_size: 0.06
   batch_size: 300
-  num_iters: 10000
+  num_iters: 18000
   decay_rate: 0.999
 data:
   num_samples: 800
   noise_stddev: 0.1
 conv:
-  layer_depths: 40
+  layer_depths: 100
   layer_kernel_sizes: 3
   num_conv_layers: 8
   num_res_blocks: [0,2,2,2,2]
 display:
   refresh_rate: 1
-
-# dropout over channels for convolutions
-# disable drop out for
-
-# identity mapping paper
-# 1x1 -> pooling -> 16x16 ++ -> pooling -> 8x8 ++
-# softly validate V if query Q is similar to key K
-# self-attention: k = q, lower complexity per layer
-# multihead
 
 # docker run --gpus all -it --rm -v $(pwd):/workdir tensorflow/tensorflow:latest-gpu bash

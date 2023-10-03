@@ -7,7 +7,6 @@ from typing import List, Tuple
 
 class Conv2d(tf.Module):
     def __init__(self, layer_kernel_sizes, input_depth, layer_depths, num_classes, hidden_activation):
-
         rng = tf.random.get_global_generator()
         self.hidden_activation = hidden_activation
 
@@ -58,10 +57,12 @@ class GroupNorm(tf.Module): # see Group Normalization by Wu et al. https://arxiv
     def __init__(self, G=32, eps=1e-5):
         self.G = G
         self.eps = eps
+
         self.gamma = tf.Variable(
             tf.ones(shape = [1,3,1,1]), 
             trainable=True, 
             name="gn/gamma")
+            
         self.beta = tf.Variable(
             tf.ones(shape = [1,3,1,1]), 
             trainable=True, 
@@ -89,9 +90,9 @@ class ResidualBlock(tf.Module):
         self.conv2d = Conv2d(layer_kernel_sizes, input_depth, layer_depths, num_classes, hidden_activation)
         self.gnorm = GroupNorm(G=32)
     def __call__(self,x):
-        f = self.conv2d(x) # [bs,1,1,10]
+        f = self.conv2d(x) # [bs,32,32,3]
         f = self.gnorm(f) # [bs,32,32,3]
-        x = self.hidden_activation(f + x)
+        x = f + x
         return x
         
 
@@ -106,8 +107,9 @@ class Classifier(tf.Module):
     def __call__(self, x):
         for i in range(3):
             x = self.resblock(x)
-        x = self.conv1x1(x)
-        x = tf.squeeze(x)
+        x = self.hidden_activation(x)
+        x = self.conv1x1(x) # [bs,1,1,10]
+        x = tf.squeeze(x) # [bs,10]
         return x
 
 class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
@@ -185,9 +187,17 @@ if __name__ == "__main__":
         return label
 
 
-    def getImages(file,valid=False):
+    def getImages(file,valid=False,test=False):
         combined_data = []
         combined_labels = []
+        if test:
+            batch = unpickle(file)
+            data = batch[b'data']
+            data = data.reshape(len(data),3,32,32).transpose(0,2,3,1) / 255.0
+            labels = batch[b'labels']
+            combined_labels.append(labels)
+            combined_data.append(data)
+            return combined_data[0], combined_labels[0]
         if valid:
             batch = unpickle(file + str(5))
             data = batch[b'data']
@@ -210,35 +220,23 @@ if __name__ == "__main__":
                                             combined_labels[2],combined_labels[3]], axis=0)
             return combined_data, combined_labels
 
-    # def augment(Images):
-    #     seed = (2, 0)  # tuple of size (2,)
-    #     Images = tf.image.stateless_random_contrast(Images, lower=0.1, upper=0.9, seed=seed)
-    #     Images = tf.image.stateless_random_flip_left_right(Images, seed=seed)
-    #     return Images
-
-
 
     file = r'/workdir/cifar-10-batches-py/data_batch_' # for docker :)
     # file = '/home/lizocf/ECE-471-DL/cifar-10-batches-py/data_batch_' # for local :)
     
     trainingImages, trainingLabels = getImages(file)
-    trainingImages = tf.image.flip_left_right(trainingImages)
-    # trainingImages = tf.image.random_contrast(trainingImages, lower=0.25, upper=0.75)
     trainingLabels = tf.expand_dims(trainingLabels, -1)
     trainingLabels = oneHotEncode(trainingLabels)
 
     validImages, validLabels = getImages(file,valid=True)
-    validImages = tf.image.flip_left_right(validImages)
-    # validImages = tf.image.random_contrast(validImages, lower=0.25, upper=0.75)
     validLabels = tf.expand_dims(validLabels, -1)
     validLabels = oneHotEncode(validLabels)
 
+    file_test = r'/workdir/cifar-10-batches-py/test_batch'
+    testImages, testLabels = getImages(file_test,test=True)
+    testLabels = tf.expand_dims(testLabels, -1)
+    testLabels = oneHotEncode(testLabels)
     
-
-    # plt.imshow(validImages[0])
-    # plt.show()
-    # plt.imshow(validImage[1])
-    # plt.show()
 
     input_layer = 3
     num_classes = 10
@@ -262,8 +260,6 @@ if __name__ == "__main__":
     rng = tf.random.get_global_generator()
     rng.reset_from_seed(0x43966E87BD57227011B5B03B58785EC1)
 
-
-
     bar = trange(num_iters)
     for i in bar:
         batch_indices = rng.uniform(
@@ -272,10 +268,15 @@ if __name__ == "__main__":
         with tf.GradientTape() as tape:
             # x_batch = tf.gather(trainingImages, batch_indices)
             # y_batch = tf.gather(trainingLabels, batch_indices)
-            x_batch = tf.gather(validImages, batch_indices)
-            y_batch = tf.gather(validLabels, batch_indices)
+            # x_batch = tf.gather(validImages, batch_indices)
+            # y_batch = tf.gather(validLabels, batch_indices)
+            x_batch = tf.gather(testImages, batch_indices)
+            y_batch = tf.gather(testLabels, batch_indices)
+            
             y_batch = tf.cast(y_batch, dtype=tf.float32)
             x_batch = tf.cast(x_batch, dtype=tf.float32)
+
+            x_batch = tf.image.random_flip_left_right(x_batch)
             
             y_hat = classifier(x_batch)
 

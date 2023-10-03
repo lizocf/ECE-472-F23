@@ -200,20 +200,23 @@ if __name__ == "__main__":
     file = r'/workdir/cifar-100-python/' # for docker :)
     # file = r'/home/lizocf/ECE-471-DL/cifar-100-python/' # for local :)
     
-    trainingImages, trainingLabels = getImages(file,'train')
-    trainingImages = tf.image.flip_left_right(trainingImages)
-    # trainingImages = tf.image.random_contrast(trainingImages, lower=0.25, upper=0.75)
+    Images, Labels = getImages(file,'train')
+
+    trainingImages = Images[0:40000]
+    trainingLabels = Labels[0:40000]
     trainingLabels = tf.expand_dims(trainingLabels, -1)
     trainingLabels = oneHotEncode(trainingLabels)
 
+    validImages = Images[40001:50000]
+    validLabels = Labels[40001:50000]
+    validLabels = tf.expand_dims(validLabels, -1)
+    validLabels = oneHotEncode(validLabels)
 
-    # breakpoint()
 
-    # validImages, validLabels = getImages(file,valid=True)
-    # validImages = tf.image.flip_left_right(validImages)
-    # # validImages = tf.image.random_contrast(validImages, lower=0.25, upper=0.75)
-    # validLabels = tf.expand_dims(validLabels, -1)
-    # validLabels = oneHotEncode(validLabels)
+    testImages, testLabels = getImages(file,'test')
+    testLabels = tf.expand_dims(testLabels, -1)
+    testLabels = oneHotEncode(testLabels)
+
 
     input_layer = 3
     num_classes = 100
@@ -246,12 +249,14 @@ if __name__ == "__main__":
             shape=[batch_size], maxval=num_samples, dtype=tf.int32
             )
         with tf.GradientTape() as tape:
-            x_batch = tf.gather(trainingImages, batch_indices)
-            y_batch = tf.gather(trainingLabels, batch_indices)
-            # x_batch = tf.gather(validImages, batch_indices)
-            # y_batch = tf.gather(validLabels, batch_indices)
+            # x_batch = tf.gather(trainingImages, batch_indices)
+            # y_batch = tf.gather(trainingLabels, batch_indices)
+            x_batch = tf.gather(validImages, batch_indices)
+            y_batch = tf.gather(validLabels, batch_indices)
             y_batch = tf.cast(y_batch, dtype=tf.float32)
             x_batch = tf.cast(x_batch, dtype=tf.float32)
+
+            x_batch = tf.image.random_flip_left_right(x_batch)
             
             y_hat = classifier(x_batch)
 
