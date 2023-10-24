@@ -148,7 +148,6 @@ if __name__ == "__main__":
     validLabels = oneHotEncode(validLabels)
     testLabels = oneHotEncode(testLabels)
 
-    # breakpoint()
 
     input_layer = 1
     num_classes = 10

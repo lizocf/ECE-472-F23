@@ -92,6 +92,7 @@ class ResidualBlock(tf.Module):
     def __call__(self,x):
         f = self.conv2d(x) # [bs,32,32,3]
         f = self.gnorm(f) # [bs,32,32,3]
+        f = tf.nn.dropout(f,0.5)
         x = f + x
         return x
         
@@ -221,8 +222,8 @@ if __name__ == "__main__":
             return combined_data, combined_labels
 
 
-    file = r'/workdir/cifar-10-batches-py/data_batch_' # for docker :)
-    # file = '/home/lizocf/ECE-471-DL/cifar-10-batches-py/data_batch_' # for local :)
+    file = r'/workdir/ocfemia-lizelle-2023-hw4/datasets/cifar-10-batches-py/data_batch_' # for docker :)
+    # file = '/home/lizocf/ECE-471-DL/ocfemia-lizelle-2023-hw4/datasets/cifar-10-batches-py/data_batch_' # for local :)
     
     trainingImages, trainingLabels = getImages(file)
     trainingLabels = tf.expand_dims(trainingLabels, -1)
@@ -256,11 +257,15 @@ if __name__ == "__main__":
 
     optimizer = Adam()
     
+    iters = []
+    accuracies = []
+    losses = []
 
     rng = tf.random.get_global_generator()
     rng.reset_from_seed(0x43966E87BD57227011B5B03B58785EC1)
 
     bar = trange(num_iters)
+
     for i in bar:
         batch_indices = rng.uniform(
         shape=[batch_size], maxval=num_samples, dtype=tf.int32
@@ -293,40 +298,30 @@ if __name__ == "__main__":
 
         step_size *= decay_rate 
 
+        iters.append(i)
+        accuracies.append(accuracy)
+        losses.append(loss)
+        
         if i % refresh_rate == (refresh_rate - 1):
             bar.set_description(
                 f"Step {i}; Loss => {loss}, Accuracy => {accuracy:.0%}, step_size => {step_size:0.4f}"
             )
-            if accuracy >= .94:
+            if accuracy >= .99:
                 with open('acc_loss_config.txt', 'a') as f:
                     f.write(f"-----STEP_SIZE: {step_size}, BATCH_SIZE: {batch_size}, LAYER_DEPTH: {layer_depths} -----\n")
                     f.write(f"Accuracy: {accuracy:.0%}. Loss: {loss}. Steps Taken: {i}. \n")
                 print("num_params", tf.math.add_n([tf.math.reduce_prod(var.shape) for var in classifier.trainable_variables]))
+                fig, axs = plt.subplots(1, 2)
+                axs[0, 0].plot(iters, losses, '-')
+                axs[0, 0].set_title('Loss per Iteration')
+                axs[0, 1].plot(iters, accuracies, '-')
+                axs[0, 1].set_title('Accuracy per Iteration')
+                plt.savefig("Cifar10.pdf", format='pdf')
+                plt.show()
                 exit()
             bar.refresh()
 
-
 # lzl notes:
-# - MNIST model works incredibly slow with the cifar dataset, res. implementation will speed up this process
-# - input & output layers must be same size for addition -> padding = SAME
-# - data augmentation: try flipping 50%? 
-
-# FIRST TRAINING ATTEMPT:
-# num_iters: 3000
-# Loss => 0.9513286352157593, Accuracy => 79% (top_k_accuracy_score NOT implemented this run)
-# learning:
-#   step_size: 0.05
-#   batch_size: 300
-#   num_iters: 3000
-#   decay_rate: 0.999
-# data:
-#   num_samples: 800
-#   noise_stddev: 0.1
-# conv:
-#   layer_depths: 32
-#   layer_kernel_sizes: 3
-#   num_conv_layers: 8
-#   num_res_blocks: [0,2,2,2,2]
-# display:
-#   refresh_rate: 1
-
+#  - MNIST model works incredibly slow with the cifar dataset, res. implementation will speed up this process
+#  - input & output layers must be same size for addition -> padding = SAME
+#  - data augmentation: try flipping 50%? Unfortunately, I had to flip all input images because of RESOURCE_EXHAUSTED: failed to allocate memory

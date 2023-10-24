@@ -1,0 +1,6 @@
+matplotlib
+pyyaml
+tqdm
+scikit-learn
+datasets
+sentence_transformers

@@ -1,0 +1,29 @@
+# # TRAINING CONFIG #
+# learning:
+#   step_size: 0.07
+#   batch_size: 500
+#   num_iters: 400
+#   decay_rate: 0.999
+# data:
+#   num_samples: 10000
+#   noise_stddev: 0.1
+# mlp:
+#   num_hidden_layers: 8
+#   hidden_layer_width: 30
+# display:
+#   refresh_rate: 1
+
+# VAL CONFIG #
+learning:
+  step_size: 0.07
+  batch_size: 500
+  num_iters: 300
+  decay_rate: 0.999
+data:
+  noise_stddev: 0.1
+mlp:
+  num_hidden_layers: 8
+  hidden_layer_width: 30
+display:
+  refresh_rate: 1
+

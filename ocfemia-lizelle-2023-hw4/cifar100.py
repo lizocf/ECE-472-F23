@@ -91,7 +91,8 @@ class ResidualBlock(tf.Module):
     def __call__(self,x):
         f = self.conv2d(x) # [bs,1,1,10]
         f = self.gnorm(f) # [bs,32,32,3]
-        x = self.hidden_activation(f + x)
+        f = tf.nn.dropout(f,0.5)
+        x = f + x
         return x
         
 
@@ -106,6 +107,7 @@ class Classifier(tf.Module):
     def __call__(self, x):
         for i in range(3):
             x = self.resblock(x)
+        x = self.hidden_activation(x)
         x = self.conv1x1(x)
         x = tf.squeeze(x)
         return x
@@ -197,7 +199,7 @@ if __name__ == "__main__":
         combined_data.append(data)
         return combined_data[0], combined_labels[0]
 
-    file = r'/workdir/cifar-100-python/' # for docker :)
+    file = r'/workdir/ocfemia-lizelle-2023-hw4/datasets/cifar-100-python/' # for docker :)
     # file = r'/home/lizocf/ECE-471-DL/cifar-100-python/' # for local :)
     
     Images, Labels = getImages(file,'train')
@@ -251,8 +253,10 @@ if __name__ == "__main__":
         with tf.GradientTape() as tape:
             # x_batch = tf.gather(trainingImages, batch_indices)
             # y_batch = tf.gather(trainingLabels, batch_indices)
-            x_batch = tf.gather(validImages, batch_indices)
-            y_batch = tf.gather(validLabels, batch_indices)
+            # x_batch = tf.gather(validImages, batch_indices)
+            # y_batch = tf.gather(validLabels, batch_indices)
+            x_batch = tf.gather(testImages, batch_indices)
+            y_batch = tf.gather(testLabels, batch_indices)
             y_batch = tf.cast(y_batch, dtype=tf.float32)
             x_batch = tf.cast(x_batch, dtype=tf.float32)
 
