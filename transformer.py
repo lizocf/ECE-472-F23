@@ -5,7 +5,7 @@ import einops
 import numpy as np
     
 class Linear(tf.Module):
-    def __init__(self, num_inputs, num_outputs, bias=True):
+    def __init__(self, num_inputs, num_outputs, bias=False):
         rng = tf.random.get_global_generator()
 
         stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))  ##
@@ -77,8 +77,6 @@ class MLP(tf.Module):
 
         return z
 
-example = "Hello! This is an example of a paragraph that has been split into its basic components. I wonder what will come next! Any guesses?"
-
 def tokenize(sequence):
 # remove punctuation
     for punc in ["!", ".", ",","?"]:
@@ -92,7 +90,6 @@ def build_vocab(data):
     stoi = {word:i for i, word in enumerate(vocab)}  # assign an integer to each word
     return stoi
 
-stoi = build_vocab(example)
 
 def positional_encoding(seq_length, d_model): # https://www.tensorflow.org/text/tutorials/transformer
     depth = depth/2
@@ -109,30 +106,30 @@ def positional_encoding(seq_length, d_model): # https://www.tensorflow.org/text/
 
     return tf.cast(pos_encoding, dtype=tf.float32)
 
-pain = ["I wonder what will come next!",
-        "This is a basic example paragraph.",
-        "Hello, what is a basic split?"],
-
 class Embedding(tf.Module):
-    def __init__(self, sequence, d_model):
+    def __init__(self, sequence, d_model, stoi, label = False):
         rng = tf.random.get_global_generator()
+        self.tokenized_sequences = [tokenize(seq) for seq in sequence]
         # breakpoint()
-        tokenized_sequences = [tokenize(seq) for seq in sequence[0]]
-        indexed_sequences = [[stoi[word] for word in seq] for seq in tokenized_sequences]
-        tensor_sequences = tf.constant(indexed_sequences)
+        self.indexed_sequences = tf.constant([[stoi[word] for word in seq] for seq in self.tokenized_sequences])
         vocab_size = len(stoi)
         
-        embeddings = tf.Variable(rng.normal(shape=[len(stoi), d_model]))
-        # seq = [vocab[word] for word in tokenize(seq)]
-        self.embedded_seq = tf.gather(embeddings,tensor_sequences)
-        # breakpoint()
+        embeddings = tf.Variable(rng.normal(shape=[vocab_size, d_model]))
+        self.embedded_seq = tf.gather(embeddings,self.indexed_sequences)
+        
+        # trg = []
+        # for i in self.tokenized_sequences:
+        #     y = i
+        #     trg.append(y[1:].append('<pad>'))
+        
+        # self.indexed_trg = tf.constant([[stoi[word] for word in seq] for seq in trg])
+        
+        # self.trg_seq = tf.gather(embeddings, self.indexed_trg) 
 
     def __call__(self):
         return self.embedded_seq
-
-embed = Embedding(pain, 100)
-print(embed().shape)        
-exit()
+        # breakpoint()
+   
 
 tensor = tf.random.uniform((1, 4, 512),dtype = tf.float32)
 query = tf.random.uniform((1, 4, 512),dtype = tf.float32)
@@ -170,9 +167,16 @@ class GroupNorm(tf.Module): # see Group Normalization by Wu et al. https://arxiv
 # multi = MultiHeadAttention(8,512) && multi(query,key,value)
 # breakpoint()
 
-mask = tf.fill([bs,num_heads, seq_length, d_model//num_heads], float('-inf'))
-mask = tf.linalg.band_part(mask,0,-1)
-mask = tf.linalg.set_diag(mask,tf.zeros([bs, num_heads, seq_length]))
+class FFN(tf.Module):
+    def __init__(self, d_model, d_ffn, num_hidden_layers):
+        self.w1 = Linear(d_model, d_ffn)
+        self.w2 = Linear(d_ffn, d_model)
+
+    def __call__(self, x):
+        z = self.w1(x)
+        z = tf.nn.relu(z)
+        z = self.w2(tf.nn.dropout(z,rate=0.5))
+        return z
 
 class MultiHeadAttention(tf.Module):
     
@@ -191,32 +195,23 @@ class MultiHeadAttention(tf.Module):
 
 
         Q = self.wq(input)
-        print(Q.shape)
         K = self.wk(input)
-        print(K.shape)
         V = self.wv(input)
-        print(V.shape)
 
         batch_size = Q.shape[0]
 
         # split into n-heads
         Q = tf.transpose(tf.reshape(Q, (batch_size, -1, self.n_heads, self.d_k)), (0,2,1,3)) # [bs,len,dm] -> [bs,len,nh,dk]
-        print(Q.shape)
         K = tf.transpose(tf.reshape(K, (batch_size, -1, self.n_heads, self.d_k)), (0,2,1,3)) # [bs,len,dm] -> [bs,len,nh,dk]        
-        print(K.shape)
         V = tf.transpose(tf.reshape(V, (batch_size, -1, self.n_heads, self.d_k)), (0,2,1,3)) # [bs,len,dm] -> [bs,len,nh,dk]
-        print(V.shape)
         # SDP = QK^T
         scaled_dot_prod = einops.einsum(Q, K, 'b s i k, b s j k -> b s i k')/np.sqrt(self.d_k)
-        print(scaled_dot_prod.shape)
 
         if mask is not None:
-            print(mask)
-            # breakpoint()
             scaled_dot_prod += mask
 
         attention = tf.nn.softmax(scaled_dot_prod,-1)
-        print(attention)
+        # print(attention)
 
         A = einops.einsum(attention, V, 'b s i k, b s j k  -> b s i k')
         A = tf.reshape((tf.transpose(A, (0,2,1,3))), (batch_size, -1, self.n_heads*self.d_k))
@@ -225,28 +220,26 @@ class MultiHeadAttention(tf.Module):
         # breakpoint()
         return output, attention
 
-class FFN(tf.Module):
-    def __init__(self, d_model, d_ffn, num_hidden_layers):
-        self.w1 = Linear(d_model, d_ffn)
-        self.w2 = Linear(d_ffn, d_model)
-
-    def __call__(self, x):
-        z = self.w1(x)
-        z = tf.nn.relu(z)
-        z = self.w2(tf.nn.dropout(z,rate=0.1))
 
 
 class TransformerDecoder(tf.Module):
-    def __init__(self, sequemce, vocab_size, d_model, n_layers, n_heads, d_ffn):
-        self.attention = MultiHeadAttention(d_model, n_heads)
-        self.gnorm = GroupNorm(G=32)
-        embed = Embedding(sequence, d_model)
-        self.input = embed()
-    
-    def __call__(self, target, source, mask):
-        z = self.attention(self.input, mask)
+    def __init__(self, bs, seq_length, d_model, n_layers, n_heads, d_ffn):
+        self.attention = MultiHeadAttention(n_heads, d_model)
+        self.layernorm = tf.keras.layers.LayerNormalization(axis=[1,2])
+        self.ffn = FFN(d_model, d_ffn, n_layers)
+        self.linear = Linear(d_model, d_model)
 
-        
+        # print(mask)
+    
+    def __call__(self, sequence, mask):
+        for i in range(8):
+            z, z_prob = self.attention(sequence, mask)
+            z = self.layernorm(z)
+            z = self.ffn(z)
+        z = tf.nn.relu(z)
+        z = self.linear(z)
+        z = tf.nn.softmax(z)
+        return z, z_prob
 
 class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
 
@@ -310,76 +303,82 @@ if __name__ == "__main__":
     rng = tf.random.get_global_generator()
     rng.reset_from_seed(0x43966E87BD57227011B5B03B58785EC1)
 
-    # num_samples = len(trainEmbeddings)
-    # num_samples = len(valEmbeddings)
-    # num_samples = len(testEmbeddings)
-    num_inputs = 1
-    num_outputs = 1
-
-    w = rng.normal(shape=(num_inputs, num_outputs))
-    b = rng.normal(shape=(1, num_outputs))
-
     num_iters = config["learning"]["num_iters"]
     step_size = config["learning"]["step_size"]
     decay_rate = config["learning"]["decay_rate"]
     batch_size = config["learning"]["batch_size"]
-    
-    num_hidden_layers = config["mlp"]["num_hidden_layers"]
-    hidden_layer_width = config["mlp"]["hidden_layer_width"]
 
     refresh_rate = config["display"]["refresh_rate"]
-    
+
     optimizer = Adam()
 
+##### NEW TF STUFF ######
 
-    def oneHotEncode(label):
-        onehot = list()
-        for value in label:
-            row = np.zeros((4,))
-            row[value] = 1.0
-            label = onehot.append(row)
-            # print(label)
-        label = tf.cast(onehot, dtype = tf.float32)
-        # breakpoint()
-        return label
+    d_model = config["tf"]["d_model"]
+    num_heads = config["tf"]["num_heads"]
+    num_layers = config["tf"]["num_layers"]
 
-    mlp = MLP(num_inputs, num_outputs, num_hidden_layers, hidden_layer_width, tf.nn.relu, tf.nn.sigmoid)
+    example = "Hello! This is an example of a paragraph that has been split into its basic components. I wonder what will come next! Any guesses? <beg> <end> <pad>"
+
+    sequence = ["<beg> I wonder what will come next! <end>"]
+
+    trg_sequence = ["I wonder what will come next! <end> <pad>"]
+
+    stoi = build_vocab(example)
+
+    embed = Embedding(sequence, d_model, stoi)
+    tr_embed = Embedding(trg_sequence, d_model, stoi)
+    # breakpoint()
+    embedded_seq = embed()
+    embedded_trg = tr_embed()
+
+    # breakpoint()
+
+
+    vocab_size = len(stoi)
+        
+    batch_size = embedded_seq.shape[0]
+    seq_length = embedded_seq.shape[1]    
+
+
+    mask = tf.fill([batch_size,num_heads, seq_length, d_model//num_heads], float('-inf'))
+    mask = tf.linalg.band_part(mask,0,-1)
+    mask = tf.linalg.set_diag(mask,tf.zeros([batch_size, num_heads, seq_length]))
+
+
+    # breakpoint()
 
     bar = trange(num_iters)
+    # batch_indices = rng.uniform(
+    #         shape=[batch_size], maxval=num_samples, dtype=tf.int32
+    #     )
 
     for i in bar:
-        batch_indices = rng.uniform(
-            shape=[batch_size], maxval=num_samples, dtype=tf.int32
-        )
         with tf.GradientTape() as tape:
-            # x_batch = tf.gather(tf.Variable(trainEmbeddings), batch_indices)
-            # y_batch = tf.reshape(tf.gather(oneHotEncode(trainLabels), batch_indices), (batch_size,4)) 
+            # x_batch = tf.gather(tf.Variable(testEmbeddings), batch_indices)
+            # y_batch = tf.reshape(tf.gather(oneHotEncode(testLabels), batch_indices), (batch_size,4)) 
+            decode = TransformerDecoder(batch_size, seq_length, d_model, num_layers, num_heads, d_model*4)
+            
+            y_hat, y_prob = decode(embedded_seq, mask)  
+            y_batch = embedded_trg
 
-            # x_batch = tf.gather(tf.Variable(valEmbeddings), batch_indices)
-            # y_batch = tf.reshape(tf.gather(oneHotEncode(valLabels), batch_indices), (batch_size,4)) 
+            print(y_hat[0])
+            loss = tf.math.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_batch, logits = y_hat))
 
-            x_batch = tf.gather(tf.Variable(testEmbeddings), batch_indices)
-            y_batch = tf.reshape(tf.gather(oneHotEncode(testLabels), batch_indices), (batch_size,4)) 
+        grads = tape.gradient(loss, decode.trainable_variables)
 
-            y_hat = mlp(x_batch)
+        optimizer.apply_gradients(grads, decode.trainable_variables)
 
-            # breakpoint()
-            loss = tf.math.reduce_mean(-y_batch*tf.math.log(y_hat+(1e-7))-(1-y_batch)*tf.math.log(1-y_hat+(1e-7)))
-
-        grads = tape.gradient(loss, mlp.trainable_variables)
-
-        optimizer.apply_gradients(grads, mlp.trainable_variables)
-
-        prediction = tf.math.argmax(y_hat, axis=-1)
-        y_batch = tf.math.argmax(y_batch, axis=-1)
-        equality = tf.math.equal(prediction, y_batch)
-        accuracy = tf.math.reduce_mean(tf.cast(equality, tf.float32))
+        # prediction = tf.math.argmax(y_hat, axis=-1)
+        # y_batch = tf.math.argmax(y_batch, axis=-1)
+        # equality = tf.math.equal(prediction, y_batch)
+        # accuracy = tf.math.reduce_mean(tf.cast(equality, tf.float32))
 
         step_size *= decay_rate 
 
         if i % refresh_rate == (refresh_rate - 1):
             bar.set_description(
-                f"Step {i}; Loss => {loss}, Accuracy => {accuracy:.0%}, step_size => {step_size:0.4f}"
+                f"Step {i}; Loss => {loss}, step_size => {step_size:0.4f}"
             )
             # if accuracy >= .955:
             #     with open('acc_loss_config.txt', 'a') as f:
