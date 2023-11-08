@@ -1,0 +1,7 @@
+matplotlib
+pytest
+pyyaml
+tqdm
+scikit-learn
+datasets
+einops
