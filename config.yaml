@@ -1,0 +1,15 @@
+# TRAINING CONFIG ##
+learning:
+  step_size: 0.1
+  batch_size: 300
+  num_iters: 100
+  decay_rate: 0.999
+data:
+  num_samples: 800
+  noise_stddev: 0.1
+tf:
+  d_model: 64
+  num_heads: 8
+  num_layers: 8
+display:
+  refresh_rate: 1
