@@ -2,7 +2,7 @@
 learning:
   step_size: 0.1
   batch_size: 300
-  num_iters: 100
+  num_iters: 160
   decay_rate: 0.999
 data:
   num_samples: 800

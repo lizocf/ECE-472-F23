@@ -6,16 +6,25 @@ import numpy as np
 SIZE = 256
 
 class Linear(tf.Module):
-    def __init__(self, num_inputs, num_outputs, bias=True):
+    def __init__(self, num_inputs, num_outputs, omega_0, bias=True, is_first=False):
         rng = tf.random.get_global_generator()
 
-        stddev = tf.math.sqrt(2 / (num_inputs + num_outputs))
-
-        self.w = tf.Variable( 
-            rng.normal(shape=[num_inputs, num_outputs], stddev=stddev),
-            trainable=True,
-            name="Linear/w",
-        )
+        if is_first: # important ! I forgot to initialize weights and kept getting white noise as predictions, made complete sense tho >:(
+            self.w = tf.Variable(
+                rng.uniform(shape=[num_inputs, num_outputs], 
+                minval=-1/num_inputs, 
+                maxval= 1/num_inputs),
+                trainable=True,
+                name="Linear/fw" 
+            )
+        else:            
+            self.w = tf.Variable( 
+                rng.uniform(shape=[num_inputs, num_outputs], 
+                minval=-np.sqrt(6 / num_inputs) / omega_0,
+                maxval= np.sqrt(6 / num_inputs) / omega_0),
+                trainable=True,
+                name="Linear/hw",
+            )
 
         self.bias = bias
 
@@ -43,7 +52,7 @@ class SineLayer(tf.Module):
         self.is_first = is_first
 
         self.in_features = in_features
-        self.linear = Linear(in_features, out_features, bias=bias)
+        self.linear = Linear(in_features, out_features, omega_0, bias=bias, is_first=self.is_first)
 
     def __call__(self, input):
         return tf.math.sin(self.omega_0 * self.linear(input))
@@ -57,10 +66,10 @@ class Siren(tf.Module):
                                     is_first=True, omega_0=first_omega_0)  
 
         self.hiddenLayer = [SineLayer(hidden_features, hidden_features, 
-                                       is_first=True, omega_0=first_omega_0)
+                                       is_first=False, omega_0=hidden_omega_0)
                             for i in range(self.hidden_layers)]
         
-        self.outputLayer = Linear(hidden_features, out_features)
+        self.outputLayer = Linear(hidden_features, out_features, hidden_omega_0)
 
     def __call__(self, x):
         z = self.inputLayer(x)
@@ -68,9 +77,8 @@ class Siren(tf.Module):
 
         for i in range(self.hidden_layers):
             z = tf.nn.relu(self.hiddenLayer[i](z))
-            # breakpoint()
         z = self.outputLayer(z)
-        z = tf.reshape(z, [self.hidden_features,self.hidden_features,-1])
+        # z = tf.reshape(z, [self.hidden_features,self.hidden_features,-1])
         return z
 
 class Adam: # source: https://www.tensorflow.org/guide/core/mlp_core
@@ -122,7 +130,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog="Linear",
-        description="Fits a linear model to some data, given a config",
+        description="Fits image",
     )
 
     parser.add_argument("-c", "--config", type=Path, default=Path("config.yaml"))
@@ -134,7 +142,7 @@ if __name__ == "__main__":
     rng.reset_from_seed(0x43966E87BD57227011B5B03B58785EC1)
 
 
-    def get_mgrid(sidelen, dim=2):
+    def get_mgrid(sidelen, dim=2): # stolen from siren colab
         """Generates a flattened grid of (x,y,...) coordinates in a range of -1 to 1.
         sidelen: int
         dim: int"""
@@ -149,14 +157,11 @@ if __name__ == "__main__":
         img_ground_truth = tf.image.resize(img_ground_truth, [img_size, img_size])
         return (
             get_mgrid(img_size, 2),
-            tf.reshape(img_ground_truth, [img_size * img_size, 3]),
-            img_ground_truth,
+            tf.reshape(img_ground_truth, [img_size * img_size, 3])
         )
     
-    img_mask, img_train, image_ground_truth = get_img('TestCardF.jpg', 256)
-    # breakpoint()
-
-    siren = Siren(in_features=3, out_features=3, hidden_features=256, hidden_layers=3, outermost_linear=True)
+    img_mask, img_train = get_img('TestCardF.jpg', 256)
+    siren = Siren(in_features=2, out_features=3, hidden_features=256, hidden_layers=3, outermost_linear=True)
 
 
     num_iters = config["learning"]["num_iters"]
@@ -170,55 +175,47 @@ if __name__ == "__main__":
 
     optimizer = Adam()
 
+    fig, axs = plt.subplots(4,4)
+    j = 0
+    k = 0
+
     for i in bar:
         with tf.GradientTape() as tape:
-            y_batch = tf.constant(image_ground_truth)
+            img_mask = tf.cast(img_mask, dtype=tf.float32)
+            img_train = tf.cast(img_train, dtype=tf.float32)
+            y_batch = tf.constant(img_train)
 
-            y_hat = siren(img_train)
-            # breakpoint()
+            y_hat = siren(img_mask)
+            loss = tf.math.reduce_mean(0.5* (y_batch - y_hat) ** 2)
 
-            loss = tf.math.reduce_mean(0.5* (y_batch - y_hat) ** 2) # multiply original by 0.5
-
-        grads = tape.gradient(loss, siren.trainable_variables) # add all trainable vars for SGD
+        grads = tape.gradient(loss, siren.trainable_variables)
         optimizer.apply_gradients(grads, siren.trainable_variables)
 
         step_size *= decay_rate 
 
+        if i % 10 == 0:
+            if k == 4:
+                j+=1
+                k=0
+            axs[j][k].imshow(((tf.reshape(y_hat, [256,256,3])*255).numpy().astype(np.uint8)))
+            axs[j][k].axis('off')
+            k+=1
+            
         if i % refresh_rate == (refresh_rate - 1):
             bar.set_description(
                 f"Step {i}; Loss => {loss.numpy():0.4f}, step_size => {step_size:0.4f}"
             )
             bar.refresh()
+        
+    fig.savefig('preds.pdf')
 
-
-    # fig1, ax1 = plt.subplots()
-
-    # ax1.plot(x.numpy().squeeze(), y.numpy().squeeze(), "x")
-    # a = tf.linspace(tf.reduce_min(x), tf.reduce_max(x), 100)[:, tf.newaxis]
-    # ax1.plot(a.numpy().squeeze(), np.sin(2*np.pi*a), "-")
-    # ax1.plot(a.numpy().squeeze(), linear(basexp(a)).numpy().squeeze(), ".")
-
-    # ax1.set_xlabel("x")
-    # ax1.set_ylabel("y")
-    # ax1.set_title("Linear Fit of a Noisy Sinewave using Gaussian Basis Functions")
-    
-    # h = ax1.set_ylabel("y", labelpad=10)
-    # h.set_rotation(0)
-
-    # fig1.savefig("sine.pdf")
-
-    # # Gauss Plots 
-
-    # fig2, ax2 = plt.subplots()
-
-    # ax2.plot(a.numpy().squeeze(), basexp(a).numpy().squeeze(), "-")
-
-    # ax2.set_xlabel("x")
-    # ax2.set_ylabel("y")
-    # ax2.set_title("Gaussian Bases")
-    
-    # h = ax2.set_ylabel("y", labelpad=10)
-    # h.set_rotation(0)
-
-    # fig2.savefig("bases.pdf")
+    fig1, (axs1,axs2) = plt.subplots(1,2)
+    axs1.axis('off')
+    axs2.axis('off')
+    fig1.suptitle(f"Loss:{loss.numpy():0.4f}, Iters:{num_iters}")
+    axs1.imshow(((tf.reshape(y_batch, [256,256,3])*255).numpy().astype(np.uint8)))
+    axs1.set_title("Original Image")
+    axs2.imshow(((tf.reshape(y_hat, [256,256,3])*255).numpy().astype(np.uint8)))
+    axs2.set_title(f"Predicted Image")
+    fig1.savefig("finalpred.pdf")
     
