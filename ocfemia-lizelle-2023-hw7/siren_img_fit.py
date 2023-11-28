@@ -207,6 +207,9 @@ if __name__ == "__main__":
             )
             bar.refresh()
         
+
+    breakpoint()
+
     fig.savefig('preds.pdf')
 
     fig1, (axs1,axs2) = plt.subplots(1,2)
