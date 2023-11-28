@@ -143,9 +143,7 @@ if __name__ == "__main__":
 
 
     def get_mgrid(sidelen, dim=2): # stolen from siren colab
-        """Generates a flattened grid of (x,y,...) coordinates in a range of -1 to 1.
-        sidelen: int
-        dim: int"""
+
         tensors = tuple(dim * [tf.linspace(-1, 1, num=sidelen)])
         mgrid = tf.stack(tf.meshgrid(*tensors, indexing="ij"), axis=-1)
         mgrid = tf.reshape(mgrid, [-1, dim])
@@ -208,8 +206,6 @@ if __name__ == "__main__":
             bar.refresh()
         
 
-    breakpoint()
-
     fig.savefig('preds.pdf')
 
     fig1, (axs1,axs2) = plt.subplots(1,2)
@@ -222,3 +218,11 @@ if __name__ == "__main__":
     axs2.set_title(f"Predicted Image")
     fig1.savefig("finalpred.pdf")
     
+
+# INTERESTING THINGS NOTED:
+# can easily up/downscale 256x256 image tp any size! in this case, I upscaled all my images
+# to 512x512
+
+# 1. multiplying coords by a constant zooms in/out of fitted image (0.5x.pdf, 2x.pdf)
+# 2. calling cosine/sine on coords does... something? (cos.pdf, sin.pdf)
+# 3. sinwx+coswx.pdf looks really funky... cant explain ....
